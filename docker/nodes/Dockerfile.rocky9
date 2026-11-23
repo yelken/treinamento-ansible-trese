@@ -1,0 +1,48 @@
+# Nó gerenciado: Rocky Linux 9 (família Red Hat) com systemd como PID 1.
+# Contexto de build: docker/   (veja compose.yml)
+FROM rockylinux:9.9
+
+ENV container=docker
+
+# Certificados de CA corporativa (proxy com inspeção TLS). Opcional: veja docker/certs/README.md
+COPY certs/ /tmp/certs/
+RUN set -eux; \
+    for f in /tmp/certs/*.crt /tmp/certs/*.pem; do \
+        [ -e "$f" ] && cp "$f" /etc/pki/ca-trust/source/anchors/ || true; \
+    done; \
+    update-ca-trust; \
+    rm -rf /tmp/certs
+
+# Pacotes-base do nó. Nada que seja objeto dos desafios (cronie, nginx, haproxy...) vem instalado.
+RUN set -eux; \
+    dnf -y install --setopt=install_weak_deps=False \
+        systemd systemd-sysv openssh-server openssh-clients sudo python3 \
+        iproute procps-ng passwd shadow-utils findutils hostname which; \
+    dnf clean all; \
+    rm -rf /var/cache/dnf /var/log/dnf*.log /var/log/hawkey.log
+
+# Unidades de systemd que não fazem sentido (ou falham) dentro de um contêiner.
+RUN systemctl mask \
+        systemd-udevd.service systemd-udev-trigger.service systemd-udev-settle.service \
+        systemd-udevd-control.socket systemd-udevd-kernel.socket \
+        getty.target getty@.service console-getty.service systemd-vconsole-setup.service \
+        proc-sys-fs-binfmt_misc.automount proc-sys-fs-binfmt_misc.mount \
+        dev-hugepages.mount sys-fs-fuse-connections.mount sys-kernel-config.mount \
+        sys-kernel-debug.mount sys-kernel-tracing.mount \
+        systemd-remount-fs.service systemd-sysctl.service systemd-binfmt.service \
+        systemd-random-seed.service systemd-firstboot.service dnf-makecache.timer \
+    && systemctl enable sshd.service
+
+# Usuário de automação. Sem senha; entra apenas por chave SSH (gerada pelo `lab up`).
+RUN set -eux; \
+    useradd --create-home --shell /bin/bash ansible; \
+    usermod --password '*' ansible; \
+    printf 'ansible ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/ansible; \
+    chmod 0440 /etc/sudoers.d/ansible
+
+COPY nodes/00-lab.conf /etc/ssh/sshd_config.d/00-lab.conf
+RUN chmod 0600 /etc/ssh/sshd_config.d/00-lab.conf
+
+EXPOSE 22 80
+STOPSIGNAL SIGRTMIN+3
+CMD ["/sbin/init"]

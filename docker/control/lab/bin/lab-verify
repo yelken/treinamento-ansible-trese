@@ -1,0 +1,14 @@
+#!/bin/bash
+# Roda o verificador do desafio NN. Uso: lab-verify NN
+set -uo pipefail
+nn="${1:-}"
+if [[ ! "$nn" =~ ^[0-9]{2}$ ]]; then
+    echo "Uso: lab verify NN   (ex.: lab verify 01)" >&2
+    exit 2
+fi
+script="/opt/lab/verify/$nn.py"
+if [[ ! -f "$script" ]]; then
+    echo "O verificador do desafio $nn ainda não está disponível nesta versão do laboratório." >&2
+    exit 2
+fi
+exec python3 "$script"

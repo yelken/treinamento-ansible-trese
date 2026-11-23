@@ -1,0 +1,110 @@
+---
+# Laboratório Ansible TRE-SE: 1 nó de controle + 4 nós gerenciados.
+# Não rode este arquivo direto: use o comando `lab` (./lab ou .\lab.ps1) na raiz do repositório.
+name: ansible-lab
+
+# --- Peças reutilizadas -------------------------------------------------------
+x-proxy-args: &proxy-args
+  # Proxy corporativo no build: export HTTP_PROXY / HTTPS_PROXY / NO_PROXY (veja docs/00-preparacao.md)
+  HTTP_PROXY: ${HTTP_PROXY:-}
+  HTTPS_PROXY: ${HTTPS_PROXY:-}
+  NO_PROXY: ${NO_PROXY:-}
+  http_proxy: ${HTTP_PROXY:-}
+  https_proxy: ${HTTPS_PROXY:-}
+  no_proxy: ${NO_PROXY:-}
+
+# systemd como PID 1 dentro do contêiner. Validado em cgroup v2 (Docker Desktop/WSL2):
+#   privileged      -> systemd precisa montar e gerenciar a sua árvore de cgroup
+#   cgroup: host    -> usa o namespace de cgroup do host (cgroup v2 + rw em /sys/fs/cgroup)
+#   /sys/fs/cgroup  -> montado em leitura e escrita
+#   tmpfs em /run, /run/lock e /tmp -> o systemd espera esses diretórios em memória
+#   stop_signal SIGRTMIN+3 -> é o sinal com que o systemd faz um desligamento limpo
+# Testado aqui: apenas "cgroup: host" + /sys/fs/cgroup rw (sem privileged) também funciona,
+# mas "privileged" foi mantido por funcionar também em hosts com AppArmor/SELinux restritivos.
+x-systemd-node: &systemd-node
+  privileged: true
+  cgroup: host
+  stop_signal: SIGRTMIN+3
+  stop_grace_period: 15s
+  restart: "no"
+  volumes:
+    - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    - lab_ssh_public:/etc/lab-keys:ro
+  tmpfs:
+    - /run
+    - /run/lock
+    - /tmp
+  networks:
+    - labnet
+
+x-rocky9-build: &rocky9-build
+  context: .
+  dockerfile: nodes/Dockerfile.rocky9
+  args: *proxy-args
+
+x-debian12-build: &debian12-build
+  context: .
+  dockerfile: nodes/Dockerfile.debian12
+  args: *proxy-args
+
+services:
+  control:
+    build:
+      context: .
+      dockerfile: control/Dockerfile
+      args: *proxy-args
+    image: ansible-lab/control:${LAB_TAG:-1.0}
+    hostname: control
+    init: true
+    working_dir: /lab
+    environment:
+      # O Ansible ignora ansible.cfg em diretório gravável por todos (caso do bind mount
+      # no Windows); a variável explícita contorna isso.
+      ANSIBLE_CONFIG: /etc/ansible/ansible.cfg
+    volumes:
+      # ÚNICA pasta do repositório visível dentro do contêiner: onde o aluno trabalha.
+      - ../desafios:/lab:z
+      # Chave privada fora de /lab: em volume nomeado, com modo 600.
+      - lab_ssh_private:/home/aluno/.ssh
+      # Chave pública publicada para os nós (o contêiner control escreve, os nós só leem).
+      - lab_ssh_public:/lab-pub
+    networks:
+      - labnet
+
+  web1:
+    <<: *systemd-node
+    build: *rocky9-build
+    image: ansible-lab/rocky9:${LAB_TAG:-1.0}
+    hostname: web1
+    expose: ["80"]
+
+  web2:
+    <<: *systemd-node
+    build: *rocky9-build
+    image: ansible-lab/rocky9:${LAB_TAG:-1.0}
+    hostname: web2
+    expose: ["80"]
+
+  db1:
+    <<: *systemd-node
+    build: *debian12-build
+    image: ansible-lab/debian12:${LAB_TAG:-1.0}
+    hostname: db1
+
+  lb1:
+    <<: *systemd-node
+    build: *rocky9-build
+    image: ansible-lab/rocky9:${LAB_TAG:-1.0}
+    hostname: lb1
+    expose: ["80"]
+    ports:
+      # Porta do balanceador no seu computador: http://localhost:8080 (mude em docker/lab.local.env)
+      - "${LAB_LB_PORT:-8080}:80"
+
+volumes:
+  lab_ssh_private:
+  lab_ssh_public:
+
+networks:
+  labnet:
+    name: ansible-lab-net

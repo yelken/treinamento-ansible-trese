@@ -1,0 +1,28 @@
+#!/bin/bash
+# Espera todos os nós gerenciados responderem por SSH (com a chave do laboratório).
+# Uso: lab-wait [timeout_em_segundos]
+set -uo pipefail
+
+timeout="${1:-120}"
+nodes=(web1 web2 db1 lb1)
+pending=("${nodes[@]}")
+if [[ "${FORCE_COLOR:-0}" == 1 ]]; then G=$'\e[32m'; R=$'\e[31m'; Z=$'\e[0m'; else G=; R=; Z=; fi
+start=$SECONDS
+
+while ((${#pending[@]} > 0)); do
+    still=()
+    for n in "${pending[@]}"; do
+        if ssh -o BatchMode=yes -o ConnectTimeout=3 "$n" true 2>/dev/null; then
+            printf '  %s✔%s %s responde por SSH\n' "$G" "$Z" "$n"
+        else
+            still+=("$n")
+        fi
+    done
+    pending=("${still[@]}")
+    ((${#pending[@]} == 0)) && break
+    if ((SECONDS - start >= timeout)); then
+        printf '%s✘ Tempo esgotado esperando: %s%s\n' "$R" "${pending[*]}" "$Z" >&2
+        exit 1
+    fi
+    sleep 2
+done

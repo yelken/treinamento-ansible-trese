@@ -1,0 +1,27 @@
+---
+- name: Preparar a base de administração dos servidores web
+  hosts: web
+  become: true
+  tasks:
+    - name: Instalar os pacotes básicos de suporte
+      ansible.builtin.dnf:
+        name:
+          - cronie
+          - rsync
+          - tree
+          - lsof
+        state: present
+
+    - name: Garantir o agendador ativo e habilitado no boot
+      ansible.builtin.service:
+        name: crond
+        state: started
+        enabled: true
+
+    - name: Agendar a limpeza diária de temporários
+      ansible.builtin.cron:
+        name: limpeza-tmp
+        minute: "30"
+        hour: "2"
+        job: find /var/tmp -type f -mtime +7 -delete
+        user: root

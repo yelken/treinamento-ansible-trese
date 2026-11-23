@@ -1,0 +1,7 @@
+---
+# Collections instaladas na imagem do nó de controle (versões fixadas).
+collections:
+  - name: ansible.posix
+    version: "2.2.2"
+  - name: community.general
+    version: "14.0.1"

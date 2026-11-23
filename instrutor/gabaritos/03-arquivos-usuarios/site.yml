@@ -1,0 +1,71 @@
+---
+- name: Padronizar acesso, diretórios e contas dos servidores
+  hosts: all
+  become: true
+  tasks:
+    - name: Publicar o banner de acesso
+      ansible.builtin.copy:
+        content: |
+          ACESSO RESTRITO - USO EXCLUSIVO DE PESSOAL AUTORIZADO
+        dest: /etc/motd
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Criar o grupo administrativo
+      ansible.builtin.group:
+        name: adm-infra
+        state: present
+
+    - name: Criar os diretórios padrão de operação
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: root
+        group: "{{ item.group }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - { path: /opt/infra, group: root, mode: "0755" }
+        - { path: /opt/infra/scripts, group: adm-infra, mode: "0750" }
+        - { path: /opt/infra/relatorios, group: adm-infra, mode: "2770" }
+
+    - name: Criar os usuários administrativos
+      ansible.builtin.user:
+        name: "{{ item }}"
+        shell: /bin/bash
+        groups: adm-infra
+        append: true
+        create_home: true
+        state: present
+      loop:
+        - ana
+        - bruno
+        - carla
+
+    - name: Conceder sudo sem senha ao grupo administrativo
+      ansible.builtin.copy:
+        content: |
+          %adm-infra ALL=(ALL) NOPASSWD: ALL
+        dest: /etc/sudoers.d/adm-infra
+        owner: root
+        group: root
+        mode: "0440"
+        validate: /usr/sbin/visudo -cf %s
+
+    - name: Limitar a validade das senhas a 90 dias
+      ansible.builtin.lineinfile:
+        path: /etc/login.defs
+        regexp: '^PASS_MAX_DAYS\s'
+        line: PASS_MAX_DAYS   90
+
+    - name: Remover o usuário desligado e o diretório pessoal dele
+      ansible.builtin.user:
+        name: marcos
+        state: absent
+        remove: true
+
+    - name: Autorizar a chave pública de ana
+      ansible.posix.authorized_key:
+        user: ana
+        state: present
+        key: "{{ lookup('ansible.builtin.file', 'dados/ana.pub') }}"

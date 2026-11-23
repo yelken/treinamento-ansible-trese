@@ -1,0 +1,33 @@
+# Carregado por /etc/bash.bashrc em todo shell interativo do nó de controle.
+
+case $- in *i*) ;; *) return 0 ;; esac
+
+# Prompt: deixa claro que você está DENTRO do nó de controle.
+PS1='\[\e[1;33m\][control]\[\e[0m\] \[\e[1;32m\]\u\[\e[0m\]:\[\e[1;34m\]\w\[\e[0m\]\$ '
+
+# Escolhe o ansible.cfg do desafio em que você está (o mais próximo, dentro de /lab).
+# Sem ele, vale o padrão de /etc/ansible/ansible.cfg.
+__lab_ansible_cfg() {
+    local d="$PWD"
+    while [[ "$d" == /lab || "$d" == /lab/* ]]; do
+        if [[ -f "$d/ansible.cfg" ]]; then
+            export ANSIBLE_CONFIG="$d/ansible.cfg"
+            return 0
+        fi
+        d="${d%/*}"
+        [[ -z "$d" ]] && break
+    done
+    export ANSIBLE_CONFIG=/etc/ansible/ansible.cfg
+}
+PROMPT_COMMAND=__lab_ansible_cfg
+
+alias ll='ls -lah --color=auto'
+alias ls='ls --color=auto'
+alias grep='grep --color=auto'
+
+if [[ -z "${LAB_BANNER_SHOWN:-}" ]]; then
+    export LAB_BANNER_SHOWN=1
+    printf '\e[1;33mNó de controle do Laboratório Ansible\e[0m  (ansible-core %s)\n' \
+        "$(ansible --version 2>/dev/null | sed -n '1s/.*core \([0-9.]*\).*/\1/p')"
+    printf 'Seus arquivos ficam em /lab. Nós gerenciados: web1 web2 db1 lb1.  Para sair: exit\n\n'
+fi

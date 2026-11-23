@@ -1,0 +1,22 @@
+---
+# Usado pelos verificadores: um play por grupo, para saber quem respondeu em cada grupo.
+- name: web
+  hosts: web
+  gather_facts: false
+  tasks:
+    - name: Ping
+      ansible.builtin.ping:
+
+- name: db
+  hosts: db
+  gather_facts: false
+  tasks:
+    - name: Ping
+      ansible.builtin.ping:
+
+- name: lb
+  hosts: lb
+  gather_facts: false
+  tasks:
+    - name: Ping
+      ansible.builtin.ping:

@@ -1,0 +1,8 @@
+" YAML não aceita tabulação: indentação de 2 espaços.
+syntax on
+set nocompatible
+set backspace=indent,eol,start
+set expandtab
+set tabstop=2 shiftwidth=2 softtabstop=2
+set autoindent
+set ruler

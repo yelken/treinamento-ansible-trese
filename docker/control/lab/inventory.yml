@@ -1,0 +1,17 @@
+---
+# Inventário INTERNO do laboratório: usado por `lab status`, `lab start` e pelos
+# verificadores. Não é o inventário do aluno (esse o aluno escreve nos desafios).
+all:
+  vars:
+    ansible_user: ansible
+  children:
+    web:
+      hosts:
+        web1:
+        web2:
+    db:
+      hosts:
+        db1:
+    lb:
+      hosts:
+        lb1:

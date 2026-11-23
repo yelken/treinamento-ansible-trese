@@ -1,0 +1,28 @@
+---
+# O verificador do desafio 02 devolve os nós web ao estado limpo antes de executar o
+# playbook do aluno: assim se prova que ele funciona "do zero".
+- name: Devolver os nós web ao estado limpo
+  hosts: web
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Parar e desabilitar o agendador (se existir)
+      ansible.builtin.service:
+        name: crond
+        state: stopped
+        enabled: false
+      failed_when: false
+
+    - name: Remover a tabela de agendamento do root
+      ansible.builtin.file:
+        path: /var/spool/cron/root
+        state: absent
+
+    - name: Remover os pacotes do desafio
+      ansible.builtin.dnf:
+        name:
+          - cronie
+          - rsync
+          - tree
+          - lsof
+        state: absent

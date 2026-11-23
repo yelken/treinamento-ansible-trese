@@ -1,0 +1,42 @@
+# Fim de linha: LF obrigatório nos arquivos que rodam dentro dos contêineres.
+# CRLF quebra scripts (#!/bin/bash^M) e Dockerfiles no Linux.
+* text=auto
+
+*.sh        text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.j2        text eol=lf
+*.ini       text eol=lf
+*.cfg       text eol=lf
+*.py        text eol=lf
+*.md        text eol=lf
+*.mdc       text eol=lf
+*.txt       text eol=lf
+*.conf      text eol=lf
+*.service   text eol=lf
+*.html      text eol=lf
+*.json      text eol=lf
+.ansible-lint text eol=lf
+.yamllint   text eol=lf
+Dockerfile*  text eol=lf
+lab          text eol=lf
+*.env       text eol=lf
+.env        text eol=lf
+# Scripts e configs do nó de controle (muitos não têm extensão): sempre LF.
+docker/control/lab/**  text eol=lf
+docker/control/etc/**  text eol=lf
+docker/nodes/**        text eol=lf
+.dockerignore text eol=lf
+
+# PowerShell: CRLF é o padrão no Windows; o arquivo é UTF-8 com BOM (acentos).
+*.ps1       text eol=crlf
+
+*.zip       binary
+*.tar       binary
+.gitattributes text eol=lf
+.gitignore  text eol=lf
+
+# Chaves públicas e dados lidos pelos playbooks: sempre LF
+*.pub text eol=lf
+*.txt text eol=lf
+.ansible-lint text eol=lf

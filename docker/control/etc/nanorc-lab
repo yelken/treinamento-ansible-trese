@@ -1,0 +1,5 @@
+
+# Laboratório: YAML não aceita tabulação.
+set tabsize 2
+set tabstospaces
+set autoindent

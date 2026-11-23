@@ -1,0 +1,327 @@
+#!/usr/bin/env bash
+# lab — comando do Laboratório Ansible TRE-SE (Linux, macOS, WSL2 e Git Bash).
+# É uma camada fina sobre `docker compose`; a lógica de verificação roda DENTRO do contêiner
+# `control`, para ser igual em qualquer sistema. No PowerShell use .\lab.ps1.
+set -uo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$ROOT" || exit 1
+
+# ---------------------------------------------------------------- configuração
+# docker/lab.env traz os padrões; docker/lab.local.env (opcional) sobrescreve;
+# uma variável já definida no ambiente vence os dois.
+ENV_FILES=(--env-file docker/lab.env)
+load_env_file() {
+    local line key val
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line="${line%$'\r'}"
+        [[ "$line" =~ ^[[:space:]]*# || -z "${line// }" ]] && continue
+        key="${line%%=*}"; val="${line#*=}"
+        [[ -z "${!key:-}" ]] && export "$key=$val"
+    done < "$1"
+}
+[[ -f docker/lab.local.env ]] && { ENV_FILES+=(--env-file docker/lab.local.env); load_env_file docker/lab.local.env; }
+load_env_file docker/lab.env
+
+IMAGES=("ansible-lab/control:${LAB_TAG}" "ansible-lab/rocky9:${LAB_TAG}" "ansible-lab/debian12:${LAB_TAG}")
+NODES=(web1 web2 db1 lb1)
+
+# Git Bash (MSYS) converteria caminhos como /lab em C:/Program Files/Git/lab.
+export MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'
+
+# ---------------------------------------------------------------- saída colorida
+if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+    C_OK=$'\e[32m'; C_ERR=$'\e[31m'; C_WARN=$'\e[33m'; C_B=$'\e[1m'; C_0=$'\e[0m'
+    USE_COLOR=1
+else
+    C_OK=; C_ERR=; C_WARN=; C_B=; C_0=; USE_COLOR=0
+fi
+ok()   { printf '  %s✔%s %s\n' "$C_OK" "$C_0" "$*"; }
+fail() { printf '  %s✘%s %s\n' "$C_ERR" "$C_0" "$*"; }
+warn() { printf '  %s!%s %s\n' "$C_WARN" "$C_0" "$*"; }
+info() { printf '%s==>%s %s\n' "$C_B" "$C_0" "$*"; }
+die()  { printf '%s✘ %s%s\n' "$C_ERR" "$*" "$C_0" >&2; exit 1; }
+
+# ---------------------------------------------------------------- docker compose
+dc() { docker compose "${ENV_FILES[@]}" -f docker/compose.yml "$@"; }
+
+# Em Git Bash (mintty) o docker.exe não enxerga um TTY: usa winpty quando existir.
+tty_wrap() {
+    case "$(uname -s)" in
+        MINGW*|MSYS*) command -v winpty >/dev/null 2>&1 && winpty "$@" || "$@" ;;
+        *) "$@" ;;
+    esac
+}
+
+need_docker() {
+    command -v docker >/dev/null 2>&1 || die "Docker não encontrado. Veja docs/00-preparacao.md (rode: ./lab doctor)."
+    docker info >/dev/null 2>&1 || die "O Docker está instalado, mas o serviço não responde. Abra o Docker Desktop (ou inicie o serviço) e tente de novo."
+    docker compose version >/dev/null 2>&1 || die "Docker Compose v2 não encontrado (comando 'docker compose'). Veja docs/00-preparacao.md."
+}
+
+images_present() { docker image inspect "${IMAGES[@]}" >/dev/null 2>&1; }
+
+control_running() { [[ -n "$(dc ps --status running -q control 2>/dev/null)" ]]; }
+need_running() { control_running || die "O laboratório não está no ar. Rode primeiro: ./lab up"; }
+
+# Executa um comando no nó de controle como aluno, sem TTY (verificadores, scripts).
+in_control() { dc exec -T -u aluno -w /lab -e "FORCE_COLOR=$USE_COLOR" control "$@"; }
+
+valid_nn() { [[ "${1:-}" =~ ^[0-9]{2}$ ]] || die "Informe o número do desafio com dois dígitos. Exemplo: ./lab $2 01"; }
+
+# ---------------------------------------------------------------- comandos
+cmd_build() {
+    need_docker
+    info "Construindo as imagens (a primeira vez leva alguns minutos)..."
+    if [[ -n "${HTTP_PROXY:-}${HTTPS_PROXY:-}" ]]; then
+        warn "Proxy detectado e repassado ao build: ${HTTPS_PROXY:-$HTTP_PROXY}"
+    fi
+    dc build "$@" || die "Falha no build. Se a rede usa proxy ou inspeção TLS, veja docs/00-preparacao.md."
+    ok "Imagens prontas."
+}
+
+wait_nodes() {
+    in_control /opt/lab/bin/lab-wait 120 || die "Algum nó não respondeu por SSH. Veja: ./lab status"
+}
+
+cmd_up() {
+    need_docker
+    if ! images_present; then
+        cmd_build
+    fi
+    info "Subindo os 5 contêineres..."
+    dc up -d || die "Falha ao subir o laboratório. Rode ./lab doctor para diagnosticar."
+    info "Preparando a chave SSH do laboratório..."
+    dc exec -T -u root control /opt/lab/bin/lab-keygen || die "Falha ao preparar a chave SSH."
+    info "Esperando os nós gerenciados responderem por SSH..."
+    wait_nodes
+    echo
+    ok "Laboratório no ar."
+    echo "   Entrar no nó de controle:  ./lab shell"
+    echo "   Balanceador (desafio 09):  http://localhost:${LAB_LB_PORT}"
+}
+
+cmd_shell() {
+    need_docker; need_running
+    if [[ -t 0 && -t 1 ]]; then
+        tty_wrap docker compose "${ENV_FILES[@]}" -f docker/compose.yml exec -u aluno -w /lab control bash
+    else
+        dc exec -T -u aluno -w /lab control bash
+    fi
+}
+
+cmd_verify() {
+    valid_nn "${1:-}" verify
+    need_docker; need_running
+    in_control /opt/lab/bin/lab-verify "$1"
+}
+
+recreate_nodes() {
+    dc up -d --force-recreate --no-deps "${NODES[@]}" >/dev/null 2>&1 || die "Falha ao recriar os nós gerenciados."
+    # Conexões SSH persistentes (ControlPersist) apontariam para os nós antigos.
+    in_control bash -c 'ssh -O exit web1 web2 db1 lb1 >/dev/null 2>&1; rm -rf ~/.ansible/cp; true' >/dev/null 2>&1 || true
+    wait_nodes
+}
+
+cmd_reset() {
+    need_docker; need_running
+    info "Recriando os nós gerenciados no estado inicial (seus arquivos em desafios/ não são tocados)..."
+    recreate_nodes
+    ok "Nós no estado inicial."
+}
+
+cmd_start() {
+    valid_nn "${1:-}" start
+    need_docker; need_running
+    info "Preparando o estado inicial do desafio $1..."
+    recreate_nodes
+    in_control /opt/lab/bin/lab-start "$1" || die "Falha ao preparar o desafio $1."
+    ok "Desafio $1 pronto. Abra desafios/ e leia o README do desafio."
+}
+
+cmd_status() {
+    need_docker
+    dc ps -a --format 'table {{.Service}}\t{{.Status}}\t{{.Ports}}'
+    if control_running; then
+        echo
+        info "Ansible alcançando os nós:"
+        in_control /opt/lab/bin/lab-status
+    fi
+}
+
+cmd_down() {
+    need_docker
+    info "Parando e removendo os contêineres..."
+    dc down "$@"
+}
+
+cmd_hint() {
+    valid_nn "${1:-}" hint
+    need_docker; need_running
+    in_control /opt/lab/bin/lab-hint "$@"
+}
+
+cmd_exec() {
+    need_docker; need_running
+    [[ $# -gt 0 ]] || die "Informe o comando. Exemplo: ./lab exec ansible --version"
+    in_control "$@"
+}
+
+cmd_save() {
+    need_docker
+    local out="${1:-ansible-lab-imagens.tar}"
+    images_present || die "As imagens ainda não existem. Rode ./lab build (ou ./lab up) antes."
+    info "Salvando as imagens em $out (pode levar um minuto)..."
+    docker save -o "$out" "${IMAGES[@]}" || die "Falha ao salvar as imagens."
+    ok "Arquivo gerado: $out ($(du -h "$out" | cut -f1)). Distribua-o e use: ./lab load $out"
+}
+
+cmd_load() {
+    need_docker
+    local in="${1:-ansible-lab-imagens.tar}"
+    [[ -f "$in" ]] || die "Arquivo não encontrado: $in"
+    info "Carregando as imagens de $in..."
+    docker load -i "$in" || die "Falha ao carregar as imagens."
+    ok "Imagens carregadas. Agora rode: ./lab up"
+}
+
+cmd_doctor() {
+    local bad=0
+    info "Verificando o ambiente"
+
+    if command -v docker >/dev/null 2>&1; then
+        ok "Docker CLI encontrado ($(docker --version 2>/dev/null))"
+    else
+        fail "Docker não encontrado. Instale conforme docs/00-preparacao.md"; exit 1
+    fi
+
+    if docker info >/dev/null 2>&1; then
+        ok "O serviço do Docker está respondendo"
+    else
+        fail "O serviço do Docker não responde. Abra o Docker Desktop (ou inicie o daemon)."; exit 1
+    fi
+
+    local cv
+    cv="$(docker compose version --short 2>/dev/null | sed 's/^v//')"
+    if [[ "$cv" =~ ^([0-9]+)\. ]] && ((BASH_REMATCH[1] >= 2)); then
+        ok "Docker Compose v2 ($cv)"
+    else
+        fail "Docker Compose v2 não encontrado (precisa do comando 'docker compose')."; bad=1
+    fi
+
+    local arch cg mem memgb
+    arch="$(docker info --format '{{.Architecture}}' 2>/dev/null)"
+    case "$arch" in
+        x86_64|amd64) ok "Arquitetura do Docker: $arch (amd64)" ;;
+        aarch64|arm64) ok "Arquitetura do Docker: $arch (arm64, Apple Silicon/ARM)" ;;
+        *) warn "Arquitetura inesperada: $arch (suportadas: amd64 e arm64)" ;;
+    esac
+
+    cg="$(docker info --format '{{.CgroupVersion}}' 2>/dev/null)"
+    if [[ "$cg" == "2" ]]; then
+        ok "cgroup v2 (necessário para o systemd dos nós)"
+    else
+        warn "cgroup v${cg:-?}: o laboratório foi validado em cgroup v2; os nós podem não iniciar."
+    fi
+
+    mem="$(docker info --format '{{.MemTotal}}' 2>/dev/null)"
+    memgb=$(( ${mem:-0} / 1024 / 1024 / 1024 ))
+    if ((memgb >= 4)); then
+        ok "Memória disponível para o Docker: ~${memgb} GB"
+    elif ((memgb >= 3)); then
+        warn "Memória para o Docker: ~${memgb} GB. Recomendado: 4 GB ou mais (no WSL2, ajuste .wslconfig)."
+    else
+        fail "Memória para o Docker: ~${memgb} GB. São necessários pelo menos 3 GB (ideal 4 GB)."; bad=1
+    fi
+
+    local port="${LAB_LB_PORT:-8080}" ours=0
+    control_running && [[ -n "$(dc ps --status running -q lb1 2>/dev/null)" ]] && ours=1
+    if ((ours)); then
+        ok "Porta $port em uso pelo próprio laboratório (lb1)"
+    elif (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then
+        fail "A porta $port já está em uso no seu computador. Escolha outra em docker/lab.local.env (LAB_LB_PORT=9090)."; bad=1
+    else
+        ok "Porta $port livre (balanceador)"
+    fi
+
+    # Fim de linha: CRLF nos scripts quebra os contêineres (ocorre com git autocrlf no Windows).
+    local crlf="" f
+    while IFS= read -r f; do
+        # tr remove os CR; se o resultado difere do arquivo, ele tem CRLF
+        tr -d '\r' < "$f" | cmp -s - "$f" || crlf+="$f"$'\n'
+    done < <(find lab docker/control docker/nodes docker/compose.yml -type f 2>/dev/null)
+    if [[ -z "$crlf" ]]; then
+        ok "Arquivos do laboratório com fim de linha LF"
+    else
+        fail "Arquivos com fim de linha CRLF (quebram os contêineres): $(echo "$crlf" | tr '\n' ' ')"
+        echo "      Corrija com: git config core.autocrlf false && git rm --cached -r -q . && git reset --hard"; bad=1
+    fi
+
+    local free
+    free="$(df -Pk . 2>/dev/null | awk 'NR==2 {printf "%d", $4/1024/1024}')"
+    if [[ -n "$free" ]]; then
+        if ((free >= 5)); then ok "Espaço livre em disco: ~${free} GB"
+        else warn "Pouco espaço livre em disco: ~${free} GB (as imagens ocupam cerca de 1,5 GB)."; fi
+    fi
+
+    if images_present; then
+        ok "Imagens do laboratório já construídas (funciona sem internet)"
+    else
+        warn "Imagens ainda não construídas: o primeiro './lab up' precisa de internet (ou use './lab load')."
+    fi
+
+    if [[ -n "${HTTP_PROXY:-}${HTTPS_PROXY:-}" ]]; then
+        warn "Proxy no ambiente: ${HTTPS_PROXY:-$HTTP_PROXY} (será usado no build)"
+    fi
+
+    echo
+    if ((bad)); then
+        printf '%sHá problemas a resolver antes de subir o laboratório.%s\n' "$C_ERR" "$C_0"; exit 1
+    fi
+    printf '%sAmbiente pronto. Próximo passo: ./lab up%s\n' "$C_OK" "$C_0"
+}
+
+usage() {
+    cat <<EOF
+Uso: ./lab <comando>
+
+Comandos principais
+  up              Constrói (se preciso), gera as chaves, sobe os 5 contêineres e espera o SSH
+  shell           Abre um terminal no nó de controle, em /lab
+  verify NN       Verifica o desafio NN (lista de itens aprovados/reprovados)
+  reset           Recria os nós gerenciados no estado inicial (não apaga o seu trabalho)
+
+Outros comandos
+  start NN        Reset + prepara o estado inicial exigido pelo desafio NN
+  hint NN         Mostra a próxima dica do desafio NN
+  status          Mostra os contêineres e se o Ansible alcança cada nó
+  down [-v]       Para e remove os contêineres (-v remove também as chaves SSH)
+  build           Reconstrói as imagens
+  doctor          Confere Docker, Compose v2, memória, arquitetura e portas
+  exec CMD...     Executa um comando no nó de controle, sem abrir um terminal
+  save [arquivo]  Salva as imagens em um arquivo (distribuição sem internet)
+  load [arquivo]  Carrega as imagens de um arquivo
+EOF
+}
+
+main() {
+    local cmd="${1:-help}"; shift || true
+    case "$cmd" in
+        up)             cmd_up "$@" ;;
+        shell)          cmd_shell "$@" ;;
+        verify)         cmd_verify "$@" ;;
+        reset)          cmd_reset "$@" ;;
+        start)          cmd_start "$@" ;;
+        hint)           cmd_hint "$@" ;;
+        status)         cmd_status "$@" ;;
+        down)           cmd_down "$@" ;;
+        build)          cmd_build "$@" ;;
+        doctor)         cmd_doctor "$@" ;;
+        exec)           cmd_exec "$@" ;;
+        save)           cmd_save "$@" ;;
+        load)           cmd_load "$@" ;;
+        help|-h|--help) usage ;;
+        *)              echo "Comando desconhecido: $cmd" >&2; usage >&2; exit 2 ;;
+    esac
+}
+main "$@"

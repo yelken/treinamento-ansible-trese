@@ -1,0 +1,27 @@
+#!/bin/bash
+# Gera (uma única vez) o par de chaves SSH do laboratório e publica a chave pública
+# para os nós gerenciados. Executado como root pelo `lab up`. É idempotente.
+#
+#   chave privada: volume lab_ssh_private -> /home/aluno/.ssh   (fora de /lab, modo 600)
+#   chave pública: volume lab_ssh_public  -> /lab-pub            (nós leem em /etc/lab-keys)
+set -euo pipefail
+
+for _ in $(seq 1 30); do
+    [[ -e /run/lab-ready ]] && break
+    sleep 1
+done
+
+key=/home/aluno/.ssh/id_ed25519
+
+install -d -m 0700 -o aluno -g aluno /home/aluno/.ssh
+if [[ ! -s "$key" ]]; then
+    ssh-keygen -q -t ed25519 -N '' -C 'aluno@laboratorio-ansible' -f "$key"
+    echo "Chave SSH do laboratório gerada."
+fi
+chown aluno:aluno "$key" "$key.pub"
+chmod 0600 "$key"
+chmod 0644 "$key.pub"
+
+# O sshd dos nós exige que o arquivo e o diretório pertençam ao root (StrictModes).
+install -d -m 0755 -o root -g root /lab-pub
+install -m 0644 -o root -g root "$key.pub" /lab-pub/authorized_keys

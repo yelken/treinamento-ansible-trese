@@ -1,0 +1,8 @@
+---
+# Usado por `lab status`: coleta fatos mínimos de todos os nós.
+- name: Coletar fatos mínimos dos nós
+  hosts: all
+  gather_facts: true
+  gather_subset:
+    - min
+  tasks: []

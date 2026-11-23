@@ -1,0 +1,21 @@
+---
+# Estado inicial do desafio 03: um usuário "desligado" que já existe em todos os nós,
+# com diretório pessoal e um arquivo dentro. Também usado pelo verificador do desafio 03.
+- name: Criar o usuário desligado em todos os nós
+  hosts: all
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Usuário marcos
+      ansible.builtin.user:
+        name: marcos
+        shell: /bin/bash
+        create_home: true
+        state: present
+
+    - name: Arquivo no diretório pessoal
+      ansible.builtin.copy:
+        content: "pendencias de transicao\n"
+        dest: /home/marcos/pendencias.txt
+        owner: marcos
+        mode: "0640"

@@ -1,0 +1,9 @@
+# Dependências Python do nó de controle (versões fixadas).
+# Python do controle: 3.13  (ansible-core 2.21 exige 3.12-3.14 no controle e 3.9-3.14 nos alvos;
+# Rocky 9 traz Python 3.9 e Debian 12 traz 3.11 -> ambos suportados).
+ansible-core==2.21.6
+ansible-lint==26.11.0
+yamllint==1.38.0
+# Necessários para filtros usados nos desafios (json_query, password_hash).
+jmespath==1.1.0
+passlib==1.9.5

@@ -1,0 +1,42 @@
+#!/usr/bin/env python3
+"""Mostra a próxima dica do desafio NN (lidas do README do desafio, em ordem)."""
+import glob
+import json
+import os
+import re
+import sys
+
+nn = sys.argv[1] if len(sys.argv) > 1 else ""
+if not re.fullmatch(r"\d{2}", nn):
+    sys.exit("Uso: lab hint NN   (ex.: lab hint 01)")
+
+readmes = sorted(glob.glob(f"/lab/{nn}-*/README.md"))
+if not readmes:
+    sys.exit(f"Não encontrei o README do desafio {nn} em /lab.")
+
+text = open(readmes[0], encoding="utf-8").read()
+hints = re.findall(r"<details>\s*<summary>(Dica \d.*?)</summary>(.*?)</details>", text, re.S)
+if not hints:
+    sys.exit(f"O desafio {nn} não tem dicas no README.")
+
+state_path = os.path.expanduser("~/.lab_hints.json")
+try:
+    state = json.load(open(state_path, encoding="utf-8"))
+except (OSError, ValueError):
+    state = {}
+
+shown = state.get(nn, 0)
+if shown >= len(hints):
+    print(f"Você já viu as {len(hints)} dicas do desafio {nn}.")
+    print("Releia a teoria e o DESENHO.md, rode ansible-doc no módulo em questão ou chame o instrutor.")
+    sys.exit(0)
+
+title, body = hints[shown]
+state[nn] = shown + 1
+json.dump(state, open(state_path, "w", encoding="utf-8"))
+
+print(f"\033[1m{title.strip()}  (dica {shown + 1} de {len(hints)})\033[0m\n" if os.environ.get("FORCE_COLOR") == "1"
+      else f"{title.strip()}  (dica {shown + 1} de {len(hints)})\n")
+print(body.strip())
+if shown + 1 < len(hints):
+    print("\nPrecisa de mais ajuda? Rode lab hint " + nn + " de novo para a próxima dica.")

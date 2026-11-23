@@ -1,0 +1,31 @@
+# Pacotes gerados
+*.zip
+*.tar
+*.tar.gz
+dist/
+
+# Configuração local do aluno
+.env
+docker/.env
+
+# Lixo do Ansible / Python / editores
+*.retry
+__pycache__/
+*.pyc
+.ansible/
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Segredos nunca são versionados
+*.pem
+id_ed25519*
+id_rsa*
+.vault_pass*
+vault_pass*
+
+docker/certs/*.crt
+docker/lab.local.env
+instrutor/.backup/
