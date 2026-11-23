@@ -1,0 +1,45 @@
+---
+- name: Ferramentas de DNS e ficha de servidor
+  hosts: all
+  become: true
+  tasks:
+    - name: Instalar as ferramentas de diagnóstico de DNS
+      ansible.builtin.package:
+        name: "{{ pacote_dns }}"
+        state: present
+
+    - name: Garantir o diretório de fatos locais
+      ansible.builtin.file:
+        path: /etc/ansible/facts.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Gravar o fato local do servidor
+      ansible.builtin.copy:
+        content: |
+          [dados]
+          responsavel=infra
+        dest: /etc/ansible/facts.d/ficha.fact
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Reler os fatos locais
+      ansible.builtin.setup:
+        filter: ansible_local
+
+    - name: Gravar a ficha do servidor
+      ansible.builtin.copy:
+        content: |
+          host={{ inventory_hostname }}
+          familia={{ ansible_facts['os_family'] }}
+          ambiente={{ ambiente }}
+          retencao_dias={{ retencao_dias }}
+          pacote_dns={{ pacote_dns }}
+          responsavel={{ ansible_local['ficha']['dados']['responsavel'] }}
+        dest: /etc/ficha-servidor
+        owner: root
+        group: root
+        mode: "0644"

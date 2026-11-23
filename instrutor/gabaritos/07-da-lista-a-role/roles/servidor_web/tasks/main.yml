@@ -1,0 +1,37 @@
+---
+- name: Instalar o nginx
+  ansible.builtin.dnf:
+    name: nginx
+    state: present
+
+- name: Criar o diretório do site
+  ansible.builtin.file:
+    path: "{{ servidor_web_raiz }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Gerar a configuração do nginx
+  ansible.builtin.template:
+    src: nginx.conf.j2
+    dest: /etc/nginx/nginx.conf
+    owner: root
+    group: root
+    mode: "0644"
+    validate: /usr/sbin/nginx -t -c %s
+  notify: Recarregar o nginx
+
+- name: Gerar a página inicial
+  ansible.builtin.template:
+    src: pagina.html.j2
+    dest: "{{ servidor_web_raiz }}/index.html"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Garantir o nginx ativo e habilitado
+  ansible.builtin.service:
+    name: nginx
+    state: started
+    enabled: true

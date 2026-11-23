@@ -1,0 +1,5 @@
+---
+# Perfil de qualidade usado nos desafios. Rode: ansible-lint
+profile: production
+exclude_paths:
+  - monolitico.yml   # ponto de partida fornecido pelo "lab start 07"

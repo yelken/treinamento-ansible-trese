@@ -1,0 +1,53 @@
+---
+# Ponto de partida do desafio 07: tudo em um único playbook, com variáveis soltas.
+# Funciona e é idempotente. O desafio é REFATORAR: transformar isto em uma role.
+- name: Servidor web da página institucional (versão monolítica)
+  hosts: web
+  become: true
+  vars:
+    porta_http: 8081
+    nome_ambiente: homologacao
+    raiz_site: /var/www/site
+  tasks:
+    - name: Instalar o nginx
+      ansible.builtin.dnf:
+        name: nginx
+        state: present
+
+    - name: Criar o diretório do site
+      ansible.builtin.file:
+        path: "{{ raiz_site }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Gerar a configuração do nginx
+      ansible.builtin.template:
+        src: nginx.conf.j2
+        dest: /etc/nginx/nginx.conf
+        owner: root
+        group: root
+        mode: "0644"
+        validate: /usr/sbin/nginx -t -c %s
+      notify: Recarregar o nginx
+
+    - name: Gerar a página inicial
+      ansible.builtin.template:
+        src: pagina.html.j2
+        dest: "{{ raiz_site }}/index.html"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Garantir o nginx ativo e habilitado
+      ansible.builtin.service:
+        name: nginx
+        state: started
+        enabled: true
+
+  handlers:
+    - name: Recarregar o nginx
+      ansible.builtin.service:
+        name: nginx
+        state: reloaded

@@ -1,0 +1,3 @@
+---
+# Constante interna da role: o usuário não precisa (nem deve) mudar.
+servidor_web_raiz: /var/www/site

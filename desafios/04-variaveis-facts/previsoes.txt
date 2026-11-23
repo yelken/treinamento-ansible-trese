@@ -1,0 +1,9 @@
+# Uma linha por questão, no formato:  questão;previsão;observado
+#
+#   previsão  = o valor que você ACHA que o Ansible vai usar (escreva ANTES de rodar qualquer comando)
+#   observado = o valor que você CONSTATOU depois, rodando o Ansible de verdade
+#
+# As questões estão no README do desafio. Apague nada: só preencha depois dos ponto e vírgula.
+1;;
+2;;
+3;;

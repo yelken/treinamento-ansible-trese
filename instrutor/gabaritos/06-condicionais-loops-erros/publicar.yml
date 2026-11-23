@@ -1,0 +1,104 @@
+---
+- name: Publicar uma versão do portal
+  hosts: web
+  become: true
+  vars:
+    dir_releases: "{{ playbook_dir }}/releases"
+    raiz_portal: /var/www/portal
+    url_saude: http://localhost:8081/
+  tasks:
+    - name: Exigir o nome da versão
+      ansible.builtin.assert:
+        that:
+          - versao is defined
+        fail_msg: "Informe a versão a publicar: -e versao=NOME"
+      run_once: true
+
+    - name: Descobrir a versão que está no ar
+      ansible.builtin.stat:
+        path: "{{ raiz_portal }}/atual"
+      register: no_ar
+
+    - name: Publicar com plano de retorno
+      block:
+        - name: Copiar a versão para o servidor
+          ansible.builtin.copy:
+            src: "{{ dir_releases }}/{{ versao }}/"
+            dest: "{{ raiz_portal }}/releases/{{ versao }}/"
+            owner: root
+            group: root
+            mode: "0644"
+            directory_mode: "0755"
+
+        - name: Apontar o link atual para a nova versão
+          ansible.builtin.file:
+            src: "{{ raiz_portal }}/releases/{{ versao }}"
+            dest: "{{ raiz_portal }}/atual"
+            state: link
+
+        - name: Verificar a saúde do portal
+          ansible.builtin.uri:
+            url: "{{ url_saude }}"
+            return_content: true
+            status_code: 200
+          register: saude
+          until: saude.status == 200 and 'PORTAL-OK' in saude.content
+          retries: 3
+          delay: 2
+          changed_when: false
+
+        - name: Anotar o sucesso
+          ansible.builtin.set_fact:
+            resultado_publicacao: ok
+
+        - name: Listar as versões publicadas
+          ansible.builtin.find:
+            paths: "{{ raiz_portal }}/releases"
+            file_type: directory
+          register: publicadas
+
+        - name: Separar as versões antigas (além das três mais recentes)
+          ansible.builtin.set_fact:
+            antigas: >-
+              {{ (publicadas.files | sort(attribute="mtime", reverse=true))[3:]
+              | rejectattr('path', 'equalto', versao_no_ar) | list }}
+          vars:
+            versao_no_ar: "{{ raiz_portal }}/releases/{{ versao }}"
+
+        - name: Manter só as três versões mais recentes
+          ansible.builtin.file:
+            path: "{{ item.path }}"
+            state: absent
+          loop: "{{ antigas }}"
+          loop_control:
+            label: "{{ item.path }}"
+
+      rescue:
+        - name: Voltar o link para a versão anterior
+          ansible.builtin.file:
+            src: "{{ no_ar.stat.lnk_source }}"
+            dest: "{{ raiz_portal }}/atual"
+            state: link
+          when: no_ar.stat.islnk | default(false)
+
+        - name: Anotar a falha
+          ansible.builtin.set_fact:
+            resultado_publicacao: falha
+
+        - name: Reportar a rejeição da versão
+          ansible.builtin.fail:
+            msg: >-
+              A versão {{ versao }} foi rejeitada na verificação de saúde;
+              o portal voltou para
+              {{ no_ar.stat.lnk_source | default('o estado anterior') }}.
+
+      always:
+        - name: Gravar o registro da publicação
+          ansible.builtin.copy:
+            content: |
+              versao={{ versao }}
+              resultado={{ resultado_publicacao | default('falha') }}
+            dest: /var/log/portal/ultima-publicacao.txt
+            owner: root
+            group: root
+            mode: "0644"

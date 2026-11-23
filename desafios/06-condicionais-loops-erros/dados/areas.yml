@@ -1,0 +1,14 @@
+---
+# Áreas do portal. Cada área ativa tem uma página própria nos servidores web;
+# uma área inativa não pode ter rastro neles.
+areas:
+  - nome: protocolo
+    ativa: true
+  - nome: transparencia
+    ativa: true
+  - nome: ouvidoria
+    ativa: true
+  - nome: arquivo-morto
+    ativa: false
+  - nome: concursos-2019
+    ativa: false

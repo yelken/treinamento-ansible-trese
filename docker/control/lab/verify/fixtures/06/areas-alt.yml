@@ -1,0 +1,6 @@
+---
+areas:
+  - { nome: protocolo, ativa: false }
+  - { nome: novidades, ativa: true }
+  - { nome: ouvidoria, ativa: true }
+  - { nome: transparencia, ativa: false }

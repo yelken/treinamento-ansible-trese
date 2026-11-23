@@ -1,0 +1,141 @@
+---
+# Estado inicial do desafio 09 (também usado pelo verificador): aplicação "Portal de Avisos"
+# na versão 1 em web1 e web2 (nginx na porta 80), e HAProxy em lb1 na frente dos dois.
+- name: Aplicação na versão 1 nos nós web
+  hosts: web
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Instalar o nginx
+      ansible.builtin.dnf:
+        name: nginx
+        state: present
+
+    - name: Criar o diretório da aplicação
+      ansible.builtin.file:
+        path: /srv/app
+        state: directory
+        mode: "0755"
+
+    - name: Configurar o nginx (página em / e verificação de saúde em /saude)
+      ansible.builtin.copy:
+        dest: /etc/nginx/nginx.conf
+        mode: "0644"
+        content: |
+          user nginx;
+          worker_processes 1;
+          pid /run/nginx.pid;
+          events { worker_connections 256; }
+          http {
+              access_log off;
+              error_log /var/log/nginx/error.log;
+              server {
+                  listen 80 default_server;
+                  root /srv/app;
+                  location = /saude {
+                      default_type text/plain;
+                      # /srv/app/doente existe: a release está com defeito
+                      if (-f /srv/app/doente) { return 503 "doente\n"; }
+                      return 200 "ok\n";
+                  }
+              }
+          }
+      notify: Reiniciar o nginx
+
+    - name: Remover a marca de release com defeito
+      ansible.builtin.file:
+        path: /srv/app/doente
+        state: absent
+
+    - name: Publicar a versão 1
+      ansible.builtin.copy:
+        dest: /srv/app/index.html
+        content: "versao 1 host {{ inventory_hostname }}\n"
+        mode: "0644"
+
+    - name: Garantir o nginx ativo e habilitado
+      ansible.builtin.service:
+        name: nginx
+        state: started
+        enabled: true
+
+    - name: Aplicar o reinício pendente do nginx
+      ansible.builtin.meta: flush_handlers
+
+  handlers:
+    - name: Reiniciar o nginx
+      ansible.builtin.service:
+        name: nginx
+        state: restarted
+
+- name: Balanceador na frente dos dois nós
+  hosts: lb
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Instalar o HAProxy
+      ansible.builtin.dnf:
+        name: haproxy
+        state: present
+
+    - name: Configurar o HAProxy (socket de administração habilitado)
+      ansible.builtin.copy:
+        dest: /etc/haproxy/haproxy.cfg
+        mode: "0644"
+        content: |
+          global
+              maxconn 512
+              stats socket /var/lib/haproxy/admin.sock mode 666 level admin
+          defaults
+              mode http
+              timeout connect 2s
+              timeout client 10s
+              timeout server 10s
+              # Didático: sem nova tentativa em outro servidor. Em produção, retries e
+              # redispatch escondem parte das falhas; aqui queremos enxergá-las.
+              retries 0
+          frontend entrada
+              bind *:80
+              default_backend web
+          backend web
+              balance roundrobin
+              option httpchk GET /saude
+              http-check expect status 200
+              default-server inter 1s fall 2 rise 2
+              server web1 web1:80 check
+              server web2 web2:80 check
+      notify: Reiniciar o HAProxy
+
+    - name: Garantir o HAProxy ativo e habilitado
+      ansible.builtin.service:
+        name: haproxy
+        state: started
+        enabled: true
+
+    - name: Aplicar o reinício pendente do HAProxy
+      ansible.builtin.meta: flush_handlers
+
+    - name: Colocar os dois servidores em rotação
+      community.general.haproxy:
+        socket: /var/lib/haproxy/admin.sock
+        backend: web
+        host: "{{ item }}"
+        state: enabled
+      loop:
+        - web1
+        - web2
+
+    - name: Esperar o serviço responder pelo balanceador
+      ansible.builtin.uri:
+        url: http://localhost/
+        return_content: true
+      register: resposta
+      until: resposta.status == 200
+      retries: 20
+      delay: 1
+
+  handlers:
+    - name: Reiniciar o HAProxy
+      ansible.builtin.service:
+        name: haproxy
+        state: restarted

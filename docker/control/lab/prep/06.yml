@@ -1,0 +1,99 @@
+---
+# Estado inicial do desafio 06 (também usado pelo verificador): web1 e web2 com nginx na porta 8081,
+# servindo o Portal de Avisos pelo link /var/www/portal/atual, que aponta para a versão "inicial".
+# Também deixa duas áreas antigas, que precisam ser removidas pelo aluno.
+- name: Preparar o Portal de Avisos nos nós web
+  hosts: web
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Instalar o nginx
+      ansible.builtin.dnf:
+        name: nginx
+        state: present
+
+    - name: Apagar o conteúdo e o registro anteriores do portal
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /var/www/portal
+        - /var/log/portal
+
+    - name: Criar as pastas do portal
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      loop:
+        - /var/www/portal
+        - /var/www/portal/releases
+        - /var/www/portal/releases/inicial
+        - /var/www/portal/areas
+        - /var/www/portal/areas/arquivo-morto
+        - /var/www/portal/areas/concursos-2019
+        - /var/log/portal
+
+    - name: Página da versão inicial
+      ansible.builtin.copy:
+        content: |
+          <!doctype html>
+          <html lang="pt-br">
+          <head><meta charset="utf-8"><title>Portal</title></head>
+          <body>
+            <h1>PORTAL-OK</h1>
+            <p>versao: inicial</p>
+          </body>
+          </html>
+        dest: /var/www/portal/releases/inicial/index.html
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Páginas das áreas antigas
+      ansible.builtin.copy:
+        content: "area antiga\n"
+        dest: "/var/www/portal/areas/{{ item }}/index.html"
+        owner: root
+        group: root
+        mode: "0644"
+      loop:
+        - arquivo-morto
+        - concursos-2019
+
+    - name: Link da versão no ar
+      ansible.builtin.file:
+        src: /var/www/portal/releases/inicial
+        dest: /var/www/portal/atual
+        state: link
+
+    - name: Configuração do nginx
+      ansible.builtin.copy:
+        content: |
+          user nginx;
+          worker_processes 1;
+          error_log /var/log/nginx/error.log;
+          pid /run/nginx.pid;
+          events { worker_connections 256; }
+          http {
+              include /etc/nginx/mime.types;
+              default_type application/octet-stream;
+              access_log /var/log/nginx/access.log;
+              server {
+                  listen 8081;
+                  root /var/www/portal/atual;
+                  index index.html;
+              }
+          }
+        dest: /etc/nginx/nginx.conf
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Nginx ativo, habilitado e com a configuração atual
+      ansible.builtin.systemd:
+        name: nginx
+        state: restarted
+        enabled: true

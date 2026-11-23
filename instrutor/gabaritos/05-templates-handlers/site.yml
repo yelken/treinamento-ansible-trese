@@ -1,0 +1,47 @@
+---
+- name: Servidor web da página institucional
+  hosts: web
+  become: true
+  tasks:
+    - name: Instalar o nginx
+      ansible.builtin.dnf:
+        name: nginx
+        state: present
+
+    - name: Criar o diretório da página
+      ansible.builtin.file:
+        path: /srv/site
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Gerar a configuração do nginx
+      ansible.builtin.template:
+        src: nginx.conf.j2
+        dest: /etc/nginx/nginx.conf
+        owner: root
+        group: root
+        mode: "0644"
+        validate: /usr/sbin/nginx -t -c %s
+      notify: Recarregar o nginx
+
+    - name: Gerar a página inicial
+      ansible.builtin.template:
+        src: index.html.j2
+        dest: /srv/site/index.html
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Garantir o nginx ativo e habilitado
+      ansible.builtin.service:
+        name: nginx
+        state: started
+        enabled: true
+
+  handlers:
+    - name: Recarregar o nginx
+      ansible.builtin.service:
+        name: nginx
+        state: reloaded

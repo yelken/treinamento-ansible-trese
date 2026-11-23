@@ -1,0 +1,8 @@
+---
+# Interface pública da role: valores que o usuário pode ajustar.
+
+# Porta em que o nginx escuta.
+servidor_web_porta: 8081
+
+# Nome do ambiente exibido na página.
+servidor_web_ambiente: homologacao

@@ -50,13 +50,18 @@ COPY control/etc/bashrc-lab /etc/lab/bashrc
 COPY control/etc/vimrc.local /etc/vim/vimrc.local
 COPY control/etc/nanorc-lab /etc/lab/nanorc
 COPY control/lab/ /opt/lab/
+# Segredos FICTÍCIOS do desafio 08 e a senha do cofre do laboratório: ficam fora de /lab
+# (nunca dentro do projeto do aluno). Modo 0644: o arquivo da senha do Vault não pode ter bit de execução.
+COPY control/etc/vault-pass-lab /etc/lab/vault-pass
+COPY control/etc/segredos/ /etc/lab/segredos/
 RUN set -eux; \
     chmod 0644 /etc/ansible/ansible.cfg /etc/ssh/ssh_config.d/10-lab.conf; \
     printf '\n# Laboratório Ansible\n[ -f /etc/lab/bashrc ] && . /etc/lab/bashrc\n' >> /etc/bash.bashrc; \
     printf '\n# Laboratório Ansible (por último, para o PS1 do lab vencer o padrão do Debian)\n[ -f /etc/lab/bashrc ] && . /etc/lab/bashrc\n' >> /home/aluno/.bashrc; \
     cat /etc/lab/nanorc >> /etc/nanorc; \
     chmod -R a+rX /opt/lab; \
-    chmod 0755 /opt/lab/bin/*
+    chmod 0755 /opt/lab/bin/*; \
+    chmod 0644 /etc/lab/vault-pass /etc/lab/segredos/*
 
 ENV ANSIBLE_CONFIG=/etc/ansible/ansible.cfg \
     LANG=C.UTF-8

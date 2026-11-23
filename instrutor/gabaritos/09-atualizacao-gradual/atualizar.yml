@@ -1,0 +1,41 @@
+---
+- name: Atualizar o Portal de Avisos sem interromper o serviço
+  hosts: web
+  serial: 1
+  max_fail_percentage: 0
+  vars:
+    balanceador: lb1
+    haproxy_socket: /var/lib/haproxy/admin.sock
+  tasks:
+    - name: Tirar o servidor do balanceador
+      community.general.haproxy:
+        socket: "{{ haproxy_socket }}"
+        backend: web
+        host: "{{ inventory_hostname }}"
+        state: disabled
+        wait: true
+        wait_interval: 1
+      delegate_to: "{{ balanceador }}"
+
+    - name: Atualizar a aplicação neste nó
+      ansible.builtin.include_role:
+        name: atualizar_app
+
+    - name: Validar a saúde da nova versão
+      ansible.builtin.uri:
+        url: "http://{{ inventory_hostname }}/saude"
+        status_code: 200
+      register: saude
+      until: saude.status == 200
+      retries: 3
+      delay: 2
+
+    - name: Devolver o servidor ao balanceador
+      community.general.haproxy:
+        socket: "{{ haproxy_socket }}"
+        backend: web
+        host: "{{ inventory_hostname }}"
+        state: enabled
+        wait: true
+        wait_interval: 1
+      delegate_to: "{{ balanceador }}"

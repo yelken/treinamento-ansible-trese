@@ -1,0 +1,12 @@
+---
+galaxy_info:
+  author: Equipe de portais do Órgão Exemplo
+  description: Troca a versão do Portal de Avisos em um nó (fica fora do ar).
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions:
+        - "9"
+  galaxy_tags: []
+dependencies: []

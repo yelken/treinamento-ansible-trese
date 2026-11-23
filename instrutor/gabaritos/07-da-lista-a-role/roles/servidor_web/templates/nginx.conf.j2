@@ -1,0 +1,22 @@
+# {{ ansible_managed }}
+user nginx;
+worker_processes auto;
+error_log /var/log/nginx/error.log;
+pid /run/nginx.pid;
+
+events {
+    worker_connections 512;
+}
+
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+    access_log /var/log/nginx/access.log;
+
+    server {
+        listen {{ servidor_web_porta }};
+        server_name {{ inventory_hostname }};
+        root {{ servidor_web_raiz }};
+        index index.html;
+    }
+}

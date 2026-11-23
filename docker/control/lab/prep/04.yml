@@ -1,0 +1,30 @@
+---
+# Estado inicial do desafio 04 (também usado pelo verificador): sem as ferramentas de DNS,
+# sem a ficha e sem o fato local da extensão.
+- name: Devolver os nós ao estado inicial do desafio 04
+  hosts: all
+  become: true
+  gather_facts: true
+  tasks:
+    - name: Remover as ferramentas de DNS (Red Hat)
+      ansible.builtin.dnf:
+        name: bind-utils
+        state: absent
+      when: ansible_facts['os_family'] == 'RedHat'
+
+    - name: Remover as ferramentas de DNS (Debian)
+      ansible.builtin.apt:
+        name:
+          - dnsutils
+          - bind9-dnsutils
+        state: absent
+        purge: true
+      when: ansible_facts['os_family'] == 'Debian'
+
+    - name: Remover a ficha e o fato local
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/ficha-servidor
+        - /etc/ansible/facts.d/ficha.fact

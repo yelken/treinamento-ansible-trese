@@ -1,0 +1,40 @@
+---
+- name: Áreas do portal
+  hosts: web
+  become: true
+  vars_files:
+    - dados/areas.yml
+  tasks:
+    - name: Criar o diretório das áreas ativas
+      ansible.builtin.file:
+        path: "/var/www/portal/areas/{{ item.nome }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      loop: "{{ areas }}"
+      loop_control:
+        label: "{{ item.nome }}"
+      when: item.ativa | bool
+
+    - name: Gerar a página das áreas ativas
+      ansible.builtin.copy:
+        content: |
+          <h1>Area: {{ item.nome }}</h1>
+        dest: "/var/www/portal/areas/{{ item.nome }}/index.html"
+        owner: root
+        group: root
+        mode: "0644"
+      loop: "{{ areas }}"
+      loop_control:
+        label: "{{ item.nome }}"
+      when: item.ativa | bool
+
+    - name: Remover as áreas inativas
+      ansible.builtin.file:
+        path: "/var/www/portal/areas/{{ item.nome }}"
+        state: absent
+      loop: "{{ areas }}"
+      loop_control:
+        label: "{{ item.nome }}"
+      when: not (item.ativa | bool)

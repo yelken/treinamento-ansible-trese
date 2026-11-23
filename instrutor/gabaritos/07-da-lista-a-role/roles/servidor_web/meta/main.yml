@@ -1,0 +1,15 @@
+---
+galaxy_info:
+  author: equipe_infra
+  description: Servidor web nginx com página institucional por ambiente.
+  company: Órgão Exemplo
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: EL
+      versions:
+        - "9"
+  galaxy_tags:
+    - web
+    - nginx
+dependencies: []

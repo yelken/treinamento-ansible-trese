@@ -18,7 +18,7 @@ Este guia acompanha os desafios, um por um. Para cada um você encontra: objetiv
 - Roda no nó de controle, com as mesmas permissões do aluno, e executa o playbook dele de verdade. Idempotência é medida pelo recap real (`changed=0` na segunda rodada).
 - Cada linha é um critério (✔/✘). O total aparece como "N de M critérios atendidos". Seções de **extensão opcional** são mostradas à parte e não entram na conta.
 - Quando o `DESENHO.md` está em branco (menos de 4 palavras em alguma das cinco respostas), aparece um **lembrete**, mas ele **não reprova**. É uma decisão de projeto: o desenho não é auditável de forma automática, e reprovar por isso incentivaria o texto vazio. A conversa sobre o desenho é sua, no atendimento individual.
-- Alguns verificadores **preparam o terreno** antes de rodar o playbook do aluno (e avisam isso na saída): o 02 devolve os nós `web` ao estado limpo; o 03 recria o usuário `marcos`. Assim o resultado não depende de o aluno ter rodado o playbook antes.
+- Alguns verificadores **preparam o terreno** antes de rodar o playbook do aluno (e avisam isso na saída): o 02 devolve os nós `web` ao estado limpo; o 03 recria o usuário `marcos`; o 05 e o 07 removem o nginx; o 08 remove a conta `appportal`; o 09 põe a versão 1 no ar atrás do balanceador. Assim o resultado não depende de o aluno ter rodado o playbook antes.
 
 ### Operação no dia a dia
 
@@ -151,4 +151,254 @@ Módulo `ansible.posix.authorized_key`, com `user: ana` e `key` lida de `dados/a
 
 ---
 
-*Os desafios 04 a 12 serão acrescentados nas próximas fases.*
+## Desafio 04 — Variáveis, facts e precedência
+
+| | |
+|---|---|
+| **Dia / tempo** | Dia 2 · missão ~25 min |
+| **Objetivo** | Separar **dado** de **lógica**: valores em `group_vars`/`host_vars`, um único conjunto de tasks para duas famílias de SO (via fato `os_family` e um dicionário de dados), e exercitar a **precedência** de variáveis prevendo antes de rodar. |
+
+### O que observar
+
+- O aluno resolve a diferença `bind-utils` × `dnsutils` com `when` (o critério proíbe) ou com **dado** (um dicionário por família, consultado pelo fato)?
+- Ele faz a **previsão antes** de rodar os comandos da Parte B? (O verificador só confere o valor *observado*; a previsão é para ele.)
+- Ele diferencia "valor do host" (`ansible-inventory --host`) de "valor visto pelo play"?
+
+### Erros comuns e como guiar
+
+| O que acontece | Pergunta que guia |
+|---|---|
+| Usa `when: ansible_os_family == ...` com duas tasks de pacote. | "Daqui a seis meses entra o Ubuntu. Quantas tasks mudam? E se a diferença fosse só um **valor**, onde ele moraria?" |
+| Erra a grafia da chave do dicionário (`RedHat` × `redhat`, `Debian`). | "Rode `ansible db1 -m setup -a filter=ansible_os_family`. Compare, caractere por caractere, com a chave que você escreveu. A caixa importa." |
+| `apt` em `db1` falha por cache vazio. | No laboratório as listas do apt já vêm carregadas na imagem, então não deve ocorrer. Se ocorrer, é rede: veja `lab status`. Em produção a pergunta é "quando o cache deve ser atualizado?" (`update_cache` e `cache_valid_time`). |
+| Coloca a retenção de 90 dias do `db1` no `site.yml` com `when: inventory_hostname == 'db1'`. | "Se o `db1` mudar de nome, quantos arquivos você edita? Qual camada o Ansible oferece para valor **de um host**?" |
+| Previsão 2 (`nivel_log`): erra por achar que o grupo "de cima" vence. | "Os dois grupos estão no mesmo nível. Que regra desempata? Rode `ansible-inventory -i conflitos/inventario --host web1`." (Mesmo nível: ordem **alfabética** do nome do grupo; o último vence.) |
+| Previsão 3: esquece que `-e` vence tudo. | "Que camada está acima de `host_vars`? Rode o comando e leia a saída." |
+| Segunda rodada com `changed`: o arquivo `ficha` usa `lineinfile` ou `command: echo`. | "Descreva o estado final do arquivo inteiro. Um `template`/`copy` com `content` o descreve melhor que um `echo`?" |
+
+### Notas do instrutor
+
+- O verificador confere `previsoes.txt` apenas no campo **observado**: errar a previsão não reprova, de propósito. Peça à turma que leia as previsões em voz alta *antes* de mostrar as respostas: é aí que a precedência fica na memória.
+- O gabarito usa um dicionário por família (`pacote_dns_por_familia`) e uma variável `pacote_dns` calculada com `os_family`. O aluno pode chegar ao mesmo resultado de outro jeito; aceite desde que **não** haja `when` por distribuição.
+
+### Reflexão: respostas esperadas
+
+1. **Onde registrar a justificativa:** junto ao dado, em **comentário no próprio `host_vars/db1.yml`** (com a data, o chamado e quem decidiu) e na mensagem do commit. Comentário perdido no playbook, ou "na cabeça de alguém", se perde.
+2. **Não depender da ordem alfabética:** não definir a mesma variável em dois grupos do mesmo nível; ou usar `ansible_group_priority`; ou levar o valor a uma camada que não concorre (`host_vars`, ou um grupo-pai bem definido). O ideal é **desenhar** o inventário para que cada variável tenha uma única fonte.
+3. **`-e` em produção:** para valores pontuais e conscientes (a versão a publicar, uma janela de manutenção), que vencem tudo por desenho. O risco é a **sobrescrita silenciosa**: um `-e` esquecido em um script de CI passa por cima do inventário sem deixar rastro no repositório.
+
+### Extensão opcional (fato local)
+
+`ansible.builtin.file` (diretório `/etc/ansible/facts.d`), `ansible.builtin.copy` do `.fact` (INI com `[dados]`), `ansible.builtin.setup` com `filter=ansible_local` para **recarregar** os fatos na mesma execução, e a linha da ficha lida de `ansible_local.ficha.dados.responsavel`. Armadilha comum: usar o fato antes do `setup`; na primeira rodada ele ainda não existe.
+
+---
+
+## Desafio 05 — Templates e handlers
+
+| | |
+|---|---|
+| **Dia / tempo** | Dia 2 · missão ~30 min |
+| **Objetivo** | Gerar configuração e página com `template` (Jinja2), recarregar o nginx **só quando algo muda** (handler com `notify`) e **validar** a configuração antes de ela entrar no ar. |
+
+> Este desafio **instala o nginx de verdade** nos nós `web`: é preciso acesso à internet (ou a um *mirror*) na hora de rodar.
+
+### O que observar
+
+- O aluno entende que o handler roda **no fim do play**, e não no instante do `notify`?
+- Ele testa a segunda rodada **lendo o recap** e os nomes das tasks que rodaram, não só o `changed=0`?
+- Ele separa o que dispara recarga (configuração) do que não dispara (página)?
+
+### Erros comuns e como guiar
+
+| O que acontece | Pergunta que guia |
+|---|---|
+| `service: state: restarted` em uma task comum, no lugar do handler. | "Rode duas vezes. O recap mostra `changed` na segunda? O que isso diz sobre o que você descreveu?" |
+| Handler com nome diferente do `notify`. | **Atenção:** no Ansible 2.21 isso é **erro**, mas só aparece quando a task que notifica **muda**. Na segunda rodada nada acontece e o aluno acha que está certo. "O que você espera ver se alterar a porta? Teste isso." Boa deixa para o desafio 11 (defeito plantado). |
+| `notify` na task da página. | "Mudar o texto da página exige recarregar o nginx? O que o nginx lê na recarga?" |
+| `validate: nginx -t` (sem `-c %s`) ou `validate` em um *fragmento* de configuração. | O `validate` testa o **arquivo temporário**, e o `nginx -t` só aprova uma configuração **completa**. "O que o `nginx -t` precisa receber para validar esse arquivo? O arquivo que você gera é uma configuração inteira?" |
+| A página não mostra o host: usa uma variável que difere do nome do inventário. | "O critério fala do nome *como no inventário*. Qual variável mágica traz isso?" |
+| Porta fixa dentro do template. | "O verificador roda com outra porta. Onde essa porta deveria viver para ser trocada sem editar o template?" |
+| Reiniciar em vez de recarregar. | "O que acontece com as conexões abertas em cada caso? E se a configuração estiver inválida?" |
+
+### Reflexão: respostas esperadas
+
+1. **Texto da página × porta:** o texto **não** exige recarga (o nginx lê o arquivo a cada requisição). A **porta** exige (é configuração lida na partida/recarga). Só as tasks que alteram **a configuração** notificam o handler.
+2. **Sem `validate`:** uma configuração inválida chega aos 400 servidores. Com `reloaded`, o nginx **recusa** a configuração nova e continua com a antiga (o serviço segue no ar, mas "desatualizado", com erro no log). Com `restarted`, ele **tenta subir com a configuração inválida e fica fora do ar** em todos os servidores.
+3. **Edição manual:** na próxima execução o `template` detecta a diferença, **restaura** o arquivo e notifica o handler (que roda e recarrega). É desejável (a configuração converge, *drift* corrigido) e perigoso se a mudança manual era uma correção de emergência não registrada.
+
+### Extensão opcional (página que conhece o grupo)
+
+`groups['web']` com `{% for h in groups['web'] %}`. Mostra que o template tem acesso a **todo o inventário**, não só ao host da vez.
+
+---
+
+## Desafio 06 — Condicionais, loops e erros
+
+| | |
+|---|---|
+| **Dia / tempo** | Dia 2 · missão ~35 min |
+| **Objetivo** | Dois playbooks: um orientado a **dados** (`loop` + `when` + remoção do que sobrou) e uma **publicação segura** (`register`, `until`, `block`/`rescue`/`always`, retorno automático e registro do resultado). |
+
+> O verificador do 06 é o mais demorado do Dia 2 (**cerca de 2 minutos**): ele publica várias versões e executa as áreas duas vezes. Avise a turma para não interromper.
+
+### O que observar
+
+- O aluno trata a lista como **dado** (e a obedece quando o verificador a troca) ou escreve os nomes?
+- Na publicação: ele guarda o destino do link anterior **antes** de trocá-lo (`stat` + `register`)? É a decisão central.
+- O `rescue` termina com `fail`? Sem isso, o play continua **verde**, mesmo com a versão rejeitada.
+- Ele testa o caminho de falha com `exemplo-defeito`, e não só o do sucesso?
+
+### Erros comuns e como guiar
+
+| O que acontece | Pergunta que guia |
+|---|---|
+| Áreas inativas só **não são criadas**; diretórios antigos continuam lá. | "O critério diz que a pasta não pode existir. Que estado você descreve para uma área inativa: 'não faço nada' ou 'ausente'?" |
+| `rescue` volta o link e **não** termina com `fail`. O play fica verde. | "Quem precisa saber que a publicação foi rejeitada? O que o recap mostra? Que módulo encerra um play com mensagem?" (`ansible.builtin.fail`.) |
+| Link anterior lido depois da troca. | "Em que momento você sabe qual era a versão no ar? Esse valor ainda existe depois da troca?" |
+| Verificação de saúde sem `until`: falha na primeira tentativa porque o nginx ainda está se firmando. | "O que acontece nos primeiros segundos depois da troca? Como pedir ao Ansible para tentar de novo?" |
+| `ignore_errors: true` em vez de `block`/`rescue`. | "O que você quer que aconteça **depois** da falha? O `ignore_errors` ajuda a fazer isso ou só silencia?" |
+| Mensagem de falha genérica ("falhou"). | "Releia o critério: a mensagem precisa citar o quê? Qual variável tem esse valor?" |
+| O `always` não grava o resultado quando falha (a task está no `block`). | "Em qual seção ficam as tasks que rodam **sempre**?" |
+| `changed` em toda publicação da mesma versão (copia sempre, link recriado, `command: ln -s`). | "O que descreve o estado de um link: o módulo `file` com `state: link`? E o de uma pasta copiada?" |
+
+### Reflexão: respostas esperadas
+
+1. **400 servidores ao mesmo tempo:** o retorno **por nó** protege cada nó, mas todos tentam a mesma versão defeituosa **ao mesmo tempo**: se o defeito só aparece sob carga, todos já estarão na versão ruim quando alguém perceber. A resposta é `serial` + `max_fail_percentage`, que o desafio 09 vê.
+2. **`fail` no fim do `rescue`:** o `rescue` **absorve** o erro: sem `fail`, o play termina com sucesso e o pipeline/CI acha que publicou. O erro precisa **subir** a quem opera.
+3. **O `always`:** um painel de implantações, uma regra de CI que bloqueia a próxima publicação, um chamado automático, uma auditoria. O registro é o que torna possível a decisão **fora** do Ansible.
+
+### Extensão opcional (histórico enxuto)
+
+Módulo `ansible.builtin.find` (diretórios, ordenados por idade), e remoção das mais antigas por `loop`, **excluindo** a que `atual` aponta. A armadilha é apagar a versão no ar quando ela é antiga (retorno recente): a exclusão deve olhar para onde o link aponta, e não só para a idade.
+
+---
+
+## Desafio 07 — Da lista de tasks à role
+
+| | |
+|---|---|
+| **Dia / tempo** | Dia 3 · missão ~35 min |
+| **Objetivo** | Refatorar um playbook monolítico em uma **role** autocontida: estrutura, `defaults` × `vars`, prefixo de variáveis, README da role, mesmo resultado nos nós. |
+
+> `lab start 07` **gera** o `monolitico.yml` e os `templates/` na pasta do aluno (vêm da imagem; estão no `.gitignore`). O verificador remove o nginx antes de rodar, então também precisa de internet (ou de um *mirror*).
+
+### O que observar
+
+- O aluno usa `ansible-galaxy role init` ou monta as pastas à mão?
+- Ele **renomeia as variáveis também dentro dos templates**? É o erro mais comum (`undefined variable`).
+- Ele decide **conscientemente** o que vai em `defaults` e o que vai em `vars`? (Pergunta 3 do `DESENHO.md`.)
+- Ele roda `--list-tasks` para ver o prefixo da role nas tasks?
+
+### Erros comuns e como guiar
+
+| O que acontece | Pergunta que guia |
+|---|---|
+| `undefined variable` (nome novo ou antigo) em um template. | "Em que arquivo a variável é *usada*? Você renomeou lá também? `grep -rn raiz_site roles/`." |
+| Porta e ambiente em `vars/main.yml`. | "Qual camada vence: `vars` da role ou `group_vars`? Se o usuário da role precisa mudar, vai em qual pasta?" (O `-e` do verificador ainda vence `vars`, então só o critério estático pega o princípio.) |
+| `tasks/main.yml` copiado com o cabeçalho `tasks:` (ou com `hosts:`). | "A role espera uma **lista** de tasks. Compare com o início do `tasks/main.yml` de uma role gerada pelo `init`." |
+| `site.yml` ainda com tasks soltas "porque funciona". | "Quem é dono dessa task: a role ou o play? Daqui a seis meses outro time usa a role: a task solta vai junto?" |
+| `src: templates/nginx.conf.j2` (caminho completo). Funciona, mas é o hábito errado. | "Dentro de uma role, onde o `template` procura `src` por padrão? O que acontece se alguém renomear a pasta?" |
+| README da role gerado e não editado (cita variáveis que não existem). | "O README descreve a interface pública: quais variáveis estão em `defaults`?" |
+| Handler da role não roda porque o nome no `notify` ficou diferente do `handlers/main.yml`. | "Em que arquivo a role procura os handlers? O nome é o mesmo?" (No resultado, handlers de role aparecem como `role : nome`.) |
+
+### Reflexão: respostas esperadas
+
+1. **Expor:** o texto/arquivo da página (variável ou `template` substituível), o ambiente, a porta, talvez o caminho da raiz do site. O ponto: tudo que muda entre usuários vai para `defaults`; a role fica **fechada para edição e aberta para configuração**.
+2. **Colisão de `porta`:** a **última** definida vence (as duas roles compartilham o mesmo espaço de nomes), e uma role passa a usar o valor da outra, **sem erro**. Descobre-se com `ansible-inventory --host`, `-v`, `--list-tasks` e lendo a precedência. A defesa é o prefixo (e o `ansible-lint` aponta `var-naming[no-role-prefix]`).
+3. **Quando não vale:** automação usada **uma vez**, ou muito simples (duas tasks). Regra de bolso: a segunda vez que você copia o playbook, é hora de pensar em role. Custo de uma role: estrutura, README, versão, testes.
+
+### Extensão opcional (role publicável)
+
+`meta/main.yml` com autor, descrição, licença e plataformas; remoção do que não é usado; `ansible-lint` sem apontamentos no perfil `production`. O verificador roda `ansible-lint` sobre `site.yml` e a role.
+
+---
+
+## Desafio 08 — Segredos com Ansible Vault
+
+| | |
+|---|---|
+| **Dia / tempo** | Dia 3 · missão ~30 min |
+| **Objetivo** | Proteger um segredo de ponta a ponta: **cofre cifrado** + arquivo visível com os nomes (padrão `vars` × `vault`), `no_log`, saída limpa com `-v`/`-vvv`, e a senha de um usuário com `password_hash` mantendo a **idempotência**. |
+
+> O segredo é **fictício** (`/etc/lab/segredos/`, na imagem do nó de controle, fora do `/lab`). A senha do Vault também (`/etc/lab/vault-pass`, sem bit de execução, como pede o projeto). O `ansible.cfg` do desafio já aponta para ela; o aluno **não** precisa de `--ask-vault-pass`.
+
+### O que observar
+
+- Como o aluno **leva o valor** do cofre de segredos para o `ansible-vault create`? Quem usa `encrypt_string 'valor'` na linha de comando deixa o segredo no **histórico do shell**: use isso como conversa (o README já alerta).
+- Ele abre o cofre com `ansible-vault view` para conferir, ou confia?
+- Ele roda com `-vvv` e **lê** a saída?
+
+### Erros comuns e como guiar
+
+| O que acontece | Pergunta que guia |
+|---|---|
+| **Segunda rodada com `changed`** na task `user`. É a pegadinha central: `password_hash('sha512')` usa um *salt* **aleatório**, então o hash muda a cada execução. | "O que mudou entre as duas execuções? Para o Ansible, a senha mudou? Leia `ansible-doc -t filter ansible.builtin.password_hash` e procure o que fixa o valor que muda sozinho." (Salt fixo, até 16 caracteres.) |
+| Passa o **texto** em `password:` (sem hash). O módulo grava o texto como se fosse o hash e o login não funciona. | "O que o parâmetro `password` do módulo `user` espera? Olhe o `/etc/shadow` do nó." |
+| Variáveis do cofre **sem** o prefixo `vault_`, ou nenhum arquivo visível apontando para elas. | "Se alguém fizer `grep` pela variável no projeto, o que encontra? E sem abrir o cofre?" |
+| Cofre em `group_vars/web.yml` cifrado e nada em claro (o padrão pede dois arquivos). | "Para saber **quais** variáveis o projeto usa, o que é preciso fazer hoje? Quanto custa isso em uma revisão de código?" |
+| `no_log: true` esquecido. O módulo `user` já mascara o parâmetro `password`, então a saída pode não vazar *neste* caso, mas um `debug` ou um `copy` com `content` mostraria. O verificador cobra `no_log` **estaticamente** e confere a saída **de fato**. | "Mesmo que hoje nada vaze, o que protege a próxima pessoa que acrescentar uma task?" |
+| `debug: var=...` "para conferir". | "A tela e o log do CI são seguros? Como conferir sem imprimir (`ansible-vault view`, `getent shadow` no nó)?" |
+| Senha do Vault copiada para dentro do projeto (`.vault_pass`). | "O que adianta cifrar o cofre se a chave está ao lado? Para onde o `ansible.cfg` já aponta?" |
+| `ansible-vault create` abre um editor que o aluno não conhece. | Problema de ambiente, não do exercício: `export EDITOR=nano` (o laboratório traz `nano` e `vim`). |
+
+### Reflexão: respostas esperadas
+
+1. **Clone em outra máquina:** além do repositório, precisa da **senha do Vault** (ou do acesso ao cofre corporativo que a guarda). Só quem opera a automação deve ter essa senha, e ela circula por canal seguro, não por e-mail ou chat.
+2. **Apagar no commit seguinte:** o segredo **fica no histórico** do Git (e em clones, forks, caches de CI). A resposta é **rotacionar** o segredo, e não só apagá-lo.
+3. **`no_log`:** impede que o **resultado** da task seja impresso (saída, `-v`, `--diff`, log do CI). Não impede: um `debug` que imprime a variável em outra task, um erro que cita o valor, ou o valor no histórico do shell.
+
+### Extensão opcional (token inline)
+
+`ansible-vault encrypt_string --name portal_token '...'` produz o `!vault |` para colar em um arquivo de variáveis; o `ansible.builtin.copy` com `content`, `mode: "0600"` e `no_log: true` grava o arquivo. Lembre que passar o valor na linha de comando o deixa no histórico do shell (alternativa: `--stdin-name`).
+
+---
+
+## Desafio 09 — Atualização gradual
+
+| | |
+|---|---|
+| **Dia / tempo** | Dia 3 · missão ~40 min |
+| **Objetivo** | Atualizar dois servidores atrás de um balanceador **sem o usuário perceber**: `serial`, `delegate_to` (tirar/devolver o nó no HAProxy), espera pela confirmação do balanceador e, na extensão, verificação de saúde com parada antecipada. |
+
+> O verificador leva **cerca de 1,5 minuto**: ele põe a versão 1 no ar, dispara ~30 requisições por segundo ao `lb1` enquanto roda o playbook do aluno, e **nenhuma** pode falhar. **Este desafio não mede idempotência de propósito:** a role fornecida reinicia o nginx a cada execução.
+>
+> O HAProxy do laboratório usa `retries 0` (sem nova tentativa em outro servidor) **de propósito**: em produção, `retries` e `redispatch` esconderiam parte das falhas, e o aluno não "veria" o problema de atualizar sem tirar o nó. Se a turma perguntar, é uma boa conversa.
+
+### O que observar
+
+- Sem `serial`, o aluno vê o portal cair? Peça que rode `watch -n 0.5 curl -s http://lb1/` (ou o navegador em `localhost:8080`) em outro terminal **enquanto** executa. A experiência vale mais que a explicação.
+- Ele pensa em **quanto tempo** o nó fica fora (8 s, por desenho da role) e em **quem avisa o balanceador**?
+- Na extensão, ele percebe que o nó doente **não pode voltar** ao balanceador?
+
+### Erros comuns e como guiar
+
+| O que acontece | Pergunta que guia |
+|---|---|
+| Playbook só com a role e `serial: 1`: o portal responde 503 durante cada atualização. | "Enquanto o `web1` está sem nginx, para onde o balanceador continua mandando requisições? Quem o avisou?" |
+| Tira o servidor do balanceador **sem** `delegate_to`: o módulo roda em `web1` e não acha o socket. | "O socket de administração está em qual host? Em que host a task roda por padrão? Que palavra-chave troca o host sem perder o `inventory_hostname`?" |
+| `state: disabled` sem `wait`: a task seguinte começa antes de o HAProxy confirmar. Às vezes passa, às vezes não. | "O que significa uma task 'concluída' para o Ansible: o comando foi enviado ou o estado foi atingido? Há parâmetro no módulo para esperar?" |
+| Devolve o nó sem `wait`: o play termina quando o HAProxy ainda nem fez as verificações de saúde (`rise 2`); o verificador pode ver o servidor fora de `UP` no fim. | "No fim, o servidor está *UP* ou apenas 'habilitado'? O que o HAProxy exige antes de mandar tráfego?" |
+| `shell` com `echo "disable server ..."` e `socat`. | Só funciona com `socat`, que não está instalado. "Há módulo para isso? `ansible-doc -l community.general`, e procure `haproxy`." |
+| Só `throttle: 1` na task do balanceador, sem `serial`. | "O `throttle` limita a *task*. As tasks seguintes (a role) rodam nos dois nós juntos?" |
+| Role em `roles:` do play, com as tasks do balanceador em `pre_tasks`/`post_tasks`. | Funciona. Confira se o aluno entende a ordem `pre_tasks` → `roles` → `tasks` → `post_tasks`. |
+| (Extensão) O playbook não falha com a release doente, ou devolve o nó ao balanceador. | "Quem decide que o nó está bom? Qual URL o nginx expõe? O que o play faz se essa checagem falha?" |
+
+### Notas do instrutor
+
+- **Tempos do HAProxy:** `inter 1s fall 2 rise 2`. Tirar o nó **antes** de parar o nginx é o que evita os 503; a janela entre "nginx parou" e "HAProxy percebeu" (~2 s) é a que quebra o playbook ingênuo.
+- **`max_fail_percentage`:** com `serial: 1`, uma falha já é o lote inteiro, e o play para. O gabarito acrescenta `max_fail_percentage: 0` só para tornar a intenção explícita; se o aluno omitir, o resultado é o mesmo.
+- O verificador **devolve o laboratório à versão 1** quando executa a extensão. Se a turma interromper o `lab verify 09` no meio, rode `lab start 09`.
+
+### Reflexão: respostas esperadas
+
+1. **`serial: 1` e o tempo:** linear: ~12 s por nó, então 2 nós levam cerca de meio minuto e 200 nós, perto de 40 min. Para frotas grandes: **porcentagem** (`"10%"`) ou **lista** (`[1, 5, "25%"]`: um nó *canário* primeiro, depois lotes maiores). O compromisso é tempo × risco × capacidade restante (quantos nós podem sair sem sobrecarregar os demais).
+2. **Role que não conhece o balanceador:** é reutilizável (serve onde não há balanceador, ou há outro), simples de testar e tem **uma só responsabilidade**. Quem **orquestra** (o playbook) sabe a ordem e o contexto. Se a role tirasse e devolvesse o nó, ficaria presa a um balanceador específico.
+3. **Release com defeito hoje:** sem verificação de saúde, o playbook devolve o nó doente ao balanceador e segue para o próximo: ao final, **todos** estão doentes, um de cada vez. A extensão corta isso: valida a saúde antes de devolver, e a falha para o play.
+
+### Extensão opcional (release com defeito)
+
+Verificação de saúde com `ansible.builtin.uri` (`until` + `retries` + `delay`) antes de devolver o nó; a falha interrompe o play (com `serial: 1`, o primeiro nó doente já encerra a atualização). O nó doente fica fora (`MAINT`); o outro continua em rotação na versão antiga. O verificador roda a versão 3 doente e confere exatamente isso, sem falhas de requisição.
+
+---
+
+*Os desafios 10 a 12 serão acrescentados na próxima fase.*

@@ -1,0 +1,9 @@
+---
+# Valores que valem para todos os nós. A exceção por host mora em host_vars/.
+retencao_dias: 30
+
+# O nome do pacote depende da família do sistema (fact os_family).
+pacote_dns_por_familia:
+  RedHat: bind-utils
+  Debian: dnsutils
+pacote_dns: "{{ pacote_dns_por_familia[ansible_facts['os_family']] }}"

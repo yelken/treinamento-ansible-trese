@@ -1,0 +1,9 @@
+---
+# Versão da aplicação a publicar.
+atualizar_app_versao: 2
+# false simula uma release com defeito: depois da atualização,
+# /saude responde 503.
+atualizar_app_saudavel: true
+# Segundos com o nó fora do ar durante a atualização
+# (de propósito: o nginx fica parado).
+atualizar_app_pausa: 8

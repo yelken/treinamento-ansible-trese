@@ -1,0 +1,18 @@
+---
+# Estado inicial do desafio 08 (também usado pelo verificador): a conta da aplicação não existe
+# nos nós web, e o arquivo com o token (extensão) também não.
+- name: Remover a conta da aplicação e o arquivo de token
+  hosts: web
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Remover o usuário appportal e o diretório pessoal
+      ansible.builtin.user:
+        name: appportal
+        state: absent
+        remove: true
+
+    - name: Remover o arquivo de ambiente da aplicação
+      ansible.builtin.file:
+        path: /etc/appportal.env
+        state: absent

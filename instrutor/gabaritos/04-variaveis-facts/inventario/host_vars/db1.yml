@@ -1,0 +1,3 @@
+---
+# Exceção da auditoria: o banco guarda os registros por mais tempo.
+retencao_dias: 90

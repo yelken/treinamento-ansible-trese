@@ -1,0 +1,6 @@
+---
+- name: Servidor web da página institucional
+  hosts: web
+  become: true
+  roles:
+    - role: servidor_web

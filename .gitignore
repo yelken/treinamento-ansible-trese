@@ -29,3 +29,7 @@ vault_pass*
 docker/certs/*.crt
 docker/lab.local.env
 instrutor/.backup/
+
+# Arquivos gerados pelo "lab start 07" (ponto de partida do desafio 07)
+desafios/07-*/monolitico.yml
+desafios/07-*/templates/

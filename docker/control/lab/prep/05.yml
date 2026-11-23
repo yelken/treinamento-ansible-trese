@@ -1,0 +1,23 @@
+---
+# Estado inicial do desafio 05 (também usado pelo verificador): web1 e web2 sem nginx e sem
+# nenhum rastro de configuração ou de página.
+- name: Devolver os nós web ao estado inicial do desafio 05
+  hosts: web
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Remover o nginx
+      ansible.builtin.dnf:
+        name: "nginx*"
+        state: absent
+
+    - name: Apagar configuração e páginas
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/nginx
+        - /usr/share/nginx
+        - /var/www
+        - /srv/site
+        - /var/log/nginx

@@ -1,0 +1,4 @@
+---
+retencao_dias: 7
+nivel_log: warn
+ambiente: homologacao

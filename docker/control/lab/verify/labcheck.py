@@ -361,3 +361,133 @@ def warn_desenho(rep, desafio):
     if not desenho_preenchido(desafio.p("DESENHO.md")):
         rep.warn("Lembrete: o DESENHO.md ainda não está preenchido (as cinco perguntas). "
                  "Desenhar antes de digitar é parte do método.")
+
+
+# --------------------------------------------------------------------------- verificações reutilizáveis
+def http_get(url, timeout=5):
+    """(status, corpo) de um GET. Status 0 = sem resposta (corpo traz o motivo)."""
+    import urllib.error
+    import urllib.request
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            return resp.status, resp.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as exc:
+        return exc.code, ""
+    except Exception as exc:  # recusa de conexão, tempo esgotado, DNS...
+        return 0, str(exc)
+
+
+def syntax_check(rep, desafio, playbook, label=None):
+    """Critérios 'existe' e 'passa na sintaxe'. Retorna True se o playbook é utilizável."""
+    label = label or playbook
+    exists = desafio.exists(playbook)
+    rep.check(exists, f"{label} existe", f"{label} não existe na pasta do desafio")
+    if not exists:
+        rep.failed(f"{label} passa na checagem de sintaxe (--syntax-check)", "arquivo ausente")
+        return False
+    p = subprocess.run(["ansible-playbook", "--syntax-check", playbook], cwd=desafio.path,
+                       env=desafio.env(), capture_output=True, text=True, check=False)
+    err = [l for l in (p.stderr or p.stdout).splitlines() if l.strip()]
+    return rep.check(p.returncode == 0, f"{label} passa na checagem de sintaxe (--syntax-check)",
+                     f"{label} não passa na checagem de sintaxe", err[-1] if err else None)
+
+
+def style_checks(rep, tasks, label="o playbook"):
+    """Todas as tasks com name e todos os módulos com FQCN."""
+    if not tasks:
+        rep.failed("Todas as tasks têm name", f"não foi possível analisar {label}")
+        rep.failed("Todos os módulos usam o nome completo (FQCN)", f"não foi possível analisar {label}")
+        return
+    unnamed = [str(i) for i, t in enumerate(tasks, 1) if not str(t.get("name", "")).strip()]
+    rep.check(not unnamed, "Todas as tasks têm name", "Há tasks sem name",
+              "tasks sem name (posição no arquivo): " + ", ".join(unnamed))
+    no_fqcn = [f"{task_module(t)} (task {i})" for i, t in enumerate(tasks, 1)
+               if task_module(t) and "." not in task_module(t)]
+    rep.check(not no_fqcn, "Todos os módulos usam o nome completo (FQCN)", "Há módulos sem FQCN",
+              "módulos: " + ", ".join(no_fqcn))
+
+
+def plays(path):
+    data = load_yaml(path)
+    return [p for p in data if isinstance(p, dict)] if isinstance(data, list) else []
+
+
+def all_tasks_deep(path):
+    """Tasks de um playbook, incluindo block/rescue/always e handlers (uma lista plana)."""
+    try:
+        return playbook_tasks(path)
+    except Exception:
+        return []
+
+
+def uses_key(tasks, key):
+    """Alguma task (ou bloco) usa a palavra-chave `key`? Procura também dentro de blocos."""
+    def walk(items):
+        for t in items or []:
+            if not isinstance(t, dict):
+                continue
+            if key in t:
+                return True
+            for sub in ("block", "rescue", "always"):
+                if walk(t.get(sub)):
+                    return True
+        return False
+    return walk(tasks)
+
+
+def ran_task(run, names):
+    """Hosts em que alguma task com um dos `names` apareceu na saída JSON (executou ou foi pulada)."""
+    hosts = {}
+    for play in (run.data or {}).get("plays", []):
+        for task in play.get("tasks", []):
+            if task["task"].get("name") in names:
+                for h, res in task.get("hosts", {}).items():
+                    if not res.get("skipped"):
+                        hosts.setdefault(h, []).append(task["task"]["name"])
+    return hosts
+
+
+def tree_text(root, skip=(".git", ".ansible", "__pycache__", "node_modules")):
+    """Gera (caminho, texto) de todos os arquivos legíveis em texto abaixo de root."""
+    for base, dirs, files in os.walk(root):
+        dirs[:] = [d for d in dirs if d not in skip]
+        for f in files:
+            path = os.path.join(base, f)
+            try:
+                with open(path, "rb") as fh:
+                    raw = fh.read(2_000_000)
+            except OSError:
+                continue
+            yield path, raw.decode("utf-8", "replace")
+
+
+def failed_results(run):
+    """[(host, módulo, msg)] de todos os resultados com falha na saída JSON (inclusive os resgatados)."""
+    out = []
+    for play in (run.data or {}).get("plays", []):
+        for task in play.get("tasks", []):
+            for host, res in task.get("hosts", {}).items():
+                if res.get("failed"):
+                    out.append((host, str(res.get("action", "")), str(res.get("msg", ""))))
+    return out
+
+
+def block_parts(path):
+    """Conjunto de {'block','rescue','always'} presentes juntos em algum bloco do playbook."""
+    found = set()
+
+    def walk(items):
+        for t in items or []:
+            if isinstance(t, dict):
+                if "block" in t:
+                    here = {k for k in ("block", "rescue", "always") if k in t}
+                    if len(here) > len(found):
+                        found.clear()
+                        found.update(here)
+                    for sub in ("block", "rescue", "always"):
+                        walk(t.get(sub))
+
+    for play in plays(path):
+        for key in ("pre_tasks", "tasks", "post_tasks", "handlers"):
+            walk(play.get(key))
+    return found

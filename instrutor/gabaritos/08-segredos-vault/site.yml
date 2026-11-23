@@ -1,0 +1,27 @@
+---
+- name: Conta de serviço da aplicação do portal
+  hosts: web
+  become: true
+  vars:
+    # Salt fixo: sem ele, cada execução gera um hash novo
+    # e a task dá "changed" sempre.
+    portal_salt: saltportal01
+  tasks:
+    - name: Criar a conta de serviço da aplicação
+      ansible.builtin.user:
+        name: appportal
+        comment: Conta de serviço do portal de avisos
+        shell: /bin/bash
+        create_home: true
+        password: "{{ appportal_senha | password_hash('sha512', portal_salt) }}"
+        state: present
+      no_log: true
+
+    - name: Gravar o token da aplicação
+      ansible.builtin.copy:
+        content: "PORTAL_TOKEN={{ portal_token }}\n"
+        dest: /etc/appportal.env
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true

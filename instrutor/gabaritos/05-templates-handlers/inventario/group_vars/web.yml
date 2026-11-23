@@ -1,0 +1,4 @@
+---
+# Valores padrão do site. Qualquer -e na linha de comando vence.
+site_porta: 8081
+site_ambiente: homologacao

@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <title>Órgão Exemplo</title>
+</head>
+<body>
+  <h1>Servidor: {{ inventory_hostname }}</h1>
+  <p>Ambiente: {{ site_ambiente }}</p>
+  <ul>
+{% for h in groups['web'] %}
+    <li>{{ h }}</li>
+{% endfor %}
+  </ul>
+</body>
+</html>

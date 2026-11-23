@@ -1,0 +1,32 @@
+---
+- name: Atualizar a aplicação do Portal de Avisos neste nó
+  become: true
+  block:
+    - name: Parar o nginx para trocar a versão
+      ansible.builtin.service:
+        name: nginx
+        state: stopped
+
+    - name: Aguardar a janela de atualização
+      ansible.builtin.wait_for:
+        timeout: "{{ atualizar_app_pausa }}"
+
+    - name: Publicar a nova versão da página
+      ansible.builtin.copy:
+        dest: /srv/app/index.html
+        content: >
+          versao {{ atualizar_app_versao }} host {{ inventory_hostname }}
+        mode: "0644"
+
+    - name: Marcar a release como doente, quando for o caso
+      ansible.builtin.file:
+        path: /srv/app/doente
+        state: "{{ 'absent' if atualizar_app_saudavel | bool else 'touch' }}"
+        mode: "0644"
+        modification_time: preserve
+        access_time: preserve
+
+    - name: Iniciar o nginx na nova versão
+      ansible.builtin.service:
+        name: nginx
+        state: started
