@@ -91,13 +91,19 @@ Ao final, precisa ser verdade que:
    - existe um **grupo de grupos que representa o ambiente** (você escolhe o nome) e que reúne `web`, `db` e `lb`;
    - nenhum host ficou fora de grupo.
 2. O Ansible alcança todos os nós **pelo grupo correto**.
-3. O arquivo `respostas.txt`, na pasta do desafio, registra a **distribuição** e a **memória total (em MB)** de cada nó, descobertas com comandos ad-hoc. Formato: uma linha por nó, campos separados por `;`:
+3. O arquivo `respostas.txt`, na pasta do desafio, é o **levantamento** dos servidores. Nada é alocado nem dividido aqui: você apenas **descobre e anota** o que cada nó já tem. Para cada um dos 4 nós, registre:
+   - a **distribuição** do sistema operacional (por exemplo, `Rocky` ou `Debian`);
+   - a **memória RAM total** que o nó reporta, em **MB**, no valor inteiro que o próprio Ansible informa (sem converter, somar nem dividir entre os servidores).
+
+   Os dois valores devem ser descobertos **com comandos ad-hoc** do Ansible. Formato: uma linha por nó, campos separados por `;`:
 
    ```text
    host;distribuicao;memoria_mb
    ```
 
-   Exemplo do formato, com hosts do cenário da teoria (não são os seus): `pc01;Ubuntu;7843`
+   Exemplo do formato, com um host do cenário da teoria (não é nenhum dos seus): `pc01;Ubuntu;7843`
+
+   O `respostas.txt` já vem com linhas de partida (`Ubuntu;2048`) apenas para mostrar o formato: **são valores de exemplo, não as respostas**. Substitua cada linha pelo que você descobriu.
 
 ## Critérios de aceite
 
@@ -114,13 +120,22 @@ O verificador confere, nesta ordem:
 - [ ] O grupo `lb` responde ao ping.
 - [ ] `respostas.txt` tem uma linha para cada um dos 4 nós, no formato esperado.
 - [ ] A distribuição registrada confere em todos os nós.
-- [ ] A memória registrada (MB) confere em todos os nós.
+- [ ] A memória total registrada (MB) confere com a que cada nó reporta, em todos os nós.
 
 ## Antes de começar
 
 1. No seu terminal do computador, na pasta do repositório: `lab start 01`.
 2. Abra o arquivo **`DESENHO.md`** desta pasta e responda as cinco perguntas **antes** de escrever qualquer YAML.
 3. Abra o terminal do nó de controle (`lab shell`) e entre na pasta do desafio: `cd /lab/01-inventario`.
+
+## Como levantar os dados do `respostas.txt` no `lab shell`
+
+Tudo isto acontece **dentro do nó de controle** (`lab shell`), na pasta do desafio, **depois** de o inventário estar funcionando (`ansible-inventory -i inventario --graph` mostrando a árvore certa):
+
+1. **Pergunte aos nós, não ao seu computador.** Os valores que valem são os que **cada servidor reporta**. Use um comando **ad-hoc** (`ansible <alvo> -m <módulo> -a '<argumentos>'`, como na teoria), escolhendo como alvo o grupo do ambiente (ou `all`) para ter os 4 nós de uma vez. O módulo que coleta informações do sistema é o `ansible.builtin.setup`; o parâmetro `filter` restringe a saída ao fato que você quer. Os nomes dos dois fatos estão na Dica 3, e você pode rodar sem filtro em um só host para vê-los todos.
+2. **Leia a saída.** O Ansible mostra um bloco por host, com o nome do host no topo e o valor do fato dentro de `ansible_facts`. Cada nó pode ter um valor diferente: anote o de **cada um**, ao lado do nome do host, como ele aparece no inventário.
+3. **Anote no arquivo.** Edite o `respostas.txt` com `nano respostas.txt` (ou `vim`) e deixe **uma linha por nó**, no formato `host;distribuicao;memoria_mb`. Salve com `Ctrl+O`, `Enter`, e saia com `Ctrl+X` no `nano`. O arquivo está na mesma pasta do inventário, e por isso aparece também no seu computador, em `desafios/01-inventario/`.
+4. **Confira.** Rode `lab verify 01` no seu computador. Se a distribuição ou a memória de algum nó não bater, o verificador diz **qual nó** está errado (e, no caso da memória, quanto o nó reporta).
 
 ## Como verificar
 

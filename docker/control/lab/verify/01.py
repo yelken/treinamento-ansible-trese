@@ -123,7 +123,7 @@ for h in NODES:
         distro_prob[h] = mem_prob[h] = "sem linha em respostas.txt"
 rep.check(not distro_prob, "A distribuição registrada confere em todos os nós",
           "A distribuição registrada não confere", "\n".join(f"{h}: {m}" for h, m in distro_prob.items()))
-rep.check(not mem_prob, "A memória registrada (MB) confere em todos os nós",
+rep.check(not mem_prob, "A memória total registrada (MB) confere com a que cada nó reporta, em todos os nós",
           "A memória registrada não confere", "\n".join(f"{h}: {m}" for h, m in mem_prob.items()))
 
 # ------------------------------------------------------------------ extensão opcional

@@ -1,0 +1,4 @@
+web1;Ubuntu;2048
+web2;Ubuntu;2048
+lb1;Ubuntu;2048
+db1;Ubuntu;2048
